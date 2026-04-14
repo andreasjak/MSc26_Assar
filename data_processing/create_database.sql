@@ -34,14 +34,97 @@ SET m_component_label = CASE
     ELSE 1
 END;
 
--- Skapar manuella klassificeringen
 
-ALTER TABLE protein_data ADD COLUMN manual_classification INTEGER;
+ALTER TABLE protein_data ADD COLUMN auto_classification INTEGER; -- följande görs nedan
+ALTER TABLE protein_data ADD COLUMN llm_label INTEGER;
+-- =============================================================================
+-- MINIMAL KONSERVATIV KLASSIFICERING AV M-KOMPONENT I SERUMTOLKNING
+--
+-- Klasser:
+--   0 = Ingen M-komponent synlig på serumprovet
+--   1 = Minst en M-komponent synlig (antingen att det står, eller en halt >= 1 g/L angiven)
+--   2 = Gränsfall – halt < 1 g/L eller osäker synlighet
+--   3 = Tolkningen diskuterar inte serumprovet  → ej användbar för att arbeta med serumkurvor.
+--   4 = Lyckas ej klassificeras.
+--
+-- STRATEGI:
+--   • Klass 2 kontrolleras FÖRE klass 1 (undviker att "<1 g/L" matchas som 1)
+--   • Klass 1 kräver att extraherad siffra är >= 1 g/L
+--   • Klass 0 använder bara de två vanligaste stereotypa fraserna
+--   • Klass 3 hanteras inte här – för många varianter, LLM klarar det bättre
+--   • Klass 4 - svåra fall som måste kollas manuellt.
+-- =============================================================================
 
 UPDATE protein_data
-SET manual_classification = CASE
+SET auto_classification = 3 WHERE len(value) <= 1;
+ 
+UPDATE protein_data
+SET auto_classification = CASE
+ 
+    -- =========================================================================
+    -- KLASS 2 (före klass 1): Halt < 1 g/L eller mg/L → gränsfall
+    --
+    -- Täcker:
+    --   "halt på <1 g/L", "halt på < 1 g/L"
+    --   "halt på mindre än 1 g/L"
+    --   "M-komponent <1 g/L?"
+    --   Alla mg/L-angivelser (per definition < 1 g/L)
+    -- =========================================================================
+    WHEN lower(interpretation) LIKE '%halt på <1 g/l%'
+      OR lower(interpretation) LIKE '%halt på < 1 g/l%'
+      OR lower(interpretation) LIKE '%halt på  <1 g/l%'
+      OR lower(interpretation) LIKE '%halt på  < 1 g/l%'
+      OR lower(interpretation) LIKE '%halt på mindre än 1%g/l%'
+      OR lower(interpretation) LIKE '%m-komponent <1 g/l%'
+      OR lower(interpretation) LIKE '%m-komponent < 1 g/l%'
+      OR lower(interpretation) LIKE '%halt%mg/l%'
+    THEN 2
+ 
+    -- =========================================================================
+    -- KLASS 1: Halt STRIKT > 1 g/L → M-komponent synlig
+    --
+    -- Extraherar siffran efter "halt på [ca|cirka]" eller "på ca/cirka X g/L"
+    -- och kräver att värdet är > 1.
+    --
+    -- Täcker t.ex.:
+    --   "halt på ca 4 g/L"       → 4    > 1 → klass 1
+    --   "halt på cirka 47 g/L"   → 47   > 1 → klass 1
+    --   "på ca 60 g/L"           → 60   > 1 → klass 1
+    --   "halt på 4,72 g/L"       → 4.72 > 1 → klass 1
+    --   "halt på ca 1 g/L"       → 1    = 1 → 2 (gränszonen!)
+    --   "halt på cirka 1 g/L"    → 1    = 1 → 2 (gränszonen!)
+    -- =========================================================================
+    WHEN TRY_CAST(
+            replace(
+                regexp_extract(
+                    lower(interpretation),
+                    '(?:halt på|på ca|på cirka)\s*(?:ca\s*|cirka\s*)?(\d+[,\.]\d+|\d+)\s*g/l',
+                    1
+                ),
+                ',', '.'
+            ) AS DOUBLE
+         ) >= 1.0 THEN 1
 
-    -- NEGATIVA fraser FÖRST
+    WHEN TRY_CAST(
+            replace(
+                regexp_extract(
+                    lower(interpretation),
+                    '(?:halt på|på ca|på cirka)\s*(?:ca\s*|cirka\s*)?(\d+[,\.]\d+|\d+)\s*g/l',
+                    1
+                ),
+                ',', '.'
+            ) AS DOUBLE
+         ) < 1.0
+    THEN 2
+ 
+    -- =========================================================================
+    -- KLASS 0: Tydligt negativ – ingen M-komponent i serum
+    --
+    -- Bara de två vanligaste stereotypa fraserna. Varianter som
+    -- "Ingen synlig M-komponent i serum" eller "ej urskiljbar" skickas
+    -- till LLM – de kan förekomma i texter som OCKSÅ nämner en positiv komponent. och 
+    -- finns det en positiv komponent som är urskiljbar ska den givetvis klassas som kategori 1.
+    -- =========================================================================
     WHEN lower(interpretation) LIKE '%ingen m-komponent påvisas i serum%'           THEN 0
     WHEN lower(interpretation) LIKE '%ingen påvisbar m-komponent%'                   THEN 0
     WHEN lower(interpretation) LIKE '%ingen mätbar m-komponent%'                     THEN 0
@@ -51,57 +134,22 @@ SET manual_classification = CASE
     WHEN lower(interpretation) LIKE '%ingen synlig m-komponent på serumkurvan%'      THEN 0
     WHEN lower(interpretation) LIKE '%ses ingen m-komponent på serumkurvan%'         THEN 0
     WHEN lower(interpretation) LIKE '%ingen m-komponent synlig i serum%'             THEN 0
-    WHEN lower(interpretation) LIKE '%ingen m-komponent.%'                           THEN 0
-    WHEN lower(interpretation) LIKE '%ingen iga m-komponent påvisas%'                THEN 0
-    WHEN lower(interpretation) LIKE '%ingen igg m-komponent påvisas%'                THEN 0
-    WHEN lower(interpretation) LIKE '%ingen igm m-komponent påvisas%'                THEN 0
     WHEN lower(interpretation) LIKE '%varken patientens%synliga på serumkurvan%'     THEN 0
     WHEN lower(interpretation) LIKE '%varken patientens%urskiljbara%'                THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är idag ej säkert urskiljbar%'     THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är ej säkert urskiljbar%'          THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är idag ej säkert synlig%'         THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är idag inte säkert synlig%'       THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är idag ej urskiljbar%'            THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är ej säkert synlig%'              THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponent är idag ej säkert avgränsbar%'     THEN 0
-    WHEN lower(interpretation) LIKE '%m-komponenter är ej säkert urskiljbara%'       THEN 0
     WHEN lower(interpretation) LIKE '%ingen säkert synlig m-komponent på serumkurvan%'   THEN 0
     WHEN lower(interpretation) LIKE '%ingen säkert synlig m-komponent på dagens serumkurva%' THEN 0
     WHEN lower(interpretation) LIKE '%ingen synlig m-komponent påvisas i serum%'          THEN 0
     WHEN lower(interpretation) LIKE '%m-komponenter kan ej med säkerhet urskiljas på serumkurvan%' THEN 0
-
-    -- POSITIVA med konkret mätvärde (≥ 1 g/L) → synlig på kurvan
-    -- Matchar "halt på X g/L" där X är ett tal >= 1
-    WHEN (
-        lower(interpretation) LIKE '%m-komponent%halt på%g/l%'
-        AND regexp_matches(interpretation, 'halt på (\d+)[,.](\d+)?\s*g/[Ll]')
-        AND TRY_CAST(
-            regexp_extract(interpretation, 'halt på (\d+)', 1)
-            AS INTEGER) >= 1
-    ) THEN 1
-
-    -- POSITIVA utan halt eller med tydlig formulering
-    WHEN lower(interpretation) LIKE '%m-komponent har idag en halt%'
-        AND lower(interpretation) NOT LIKE '%halt på < %'                            THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponent är idag%'                          THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponent uppgår%'                           THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponentens halt%'                          THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponenterna%'                              THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponenten till%'                           THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponent av typ igg%'                       THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponent av typ iga%'                       THEN 1
-    WHEN lower(interpretation) LIKE '%m-komponent av typ igm%'                       THEN 1
-    WHEN lower(interpretation) LIKE '%nyupptäckt%m-komponent%'
-        AND lower(interpretation) NOT LIKE '%nyupptäckt%m-komponent%< %'             THEN 1
-    WHEN lower(interpretation) LIKE '%nyupptäckt iga%'                               THEN 1
-    WHEN lower(interpretation) LIKE '%nyupptäckt igg%'                               THEN 1
-    WHEN lower(interpretation) LIKE '%nyupptäckt igm%'                               THEN 1
-
-    -- OSÄKRA → NULL (< 1 g/L, svaga fynd, misstankar)
-    WHEN lower(interpretation) LIKE '%halt på < %'                                   THEN NULL
-    WHEN lower(interpretation) LIKE '%m-komponent < %'                               THEN NULL
-    WHEN lower(interpretation) LIKE '%kan inte uteslutas%'                           THEN NULL
-    WHEN lower(interpretation) LIKE '%misstanke om%m-komponent%'                     THEN NULL
-
-    ELSE NULL
-END;
+    WHEN lower(interpretation) LIKE '%m-komponent är idag ej synlig på serumkurva%' THEN 0
+    WHEN lower(interpretation) LIKE '%varken patientens igm kappa m-komponent eller igg kappa m-komponent är idag urskiljbar på serumkurvan%' THEN 0
+    WHEN lower(interpretation) LIKE '%är idag ej säkert urskilbara på serumelektroferogrammet%' THEN 0
+    WHEN lower(interpretation) LIKE '%ingen m-komponent är idag synlig på serumkurvan%' THEN 0
+    WHEN lower(interpretation) LIKE '%ingen m-komponent är synlig på serumkurvan%' THEN 0
+ 
+    -- =========================================================================
+    -- ALLT ANNAT → klass 4
+    -- =========================================================================
+    ELSE 4
+ 
+END
+WHERE auto_classification IS NULL;
