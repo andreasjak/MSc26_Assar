@@ -35,6 +35,8 @@ SET m_component_label = CASE
 END;
 
 
+
+
 ALTER TABLE protein_data ADD COLUMN auto_classification INTEGER; -- följande görs nedan
 ALTER TABLE protein_data ADD COLUMN llm_label INTEGER;
 -- =============================================================================
@@ -45,14 +47,15 @@ ALTER TABLE protein_data ADD COLUMN llm_label INTEGER;
 --   1 = Minst en M-komponent synlig (antingen att det står, eller en halt >= 1 g/L angiven)
 --   2 = Gränsfall – halt < 1 g/L eller osäker synlighet
 --   3 = Tolkningen diskuterar inte serumprovet  → ej användbar för att arbeta med serumkurvor.
---   4 = Lyckas ej klassificeras.
+--   4 = Oligoklonal fördelning (görs av LLM)
+--   5 = Måste tas med LLM.
 --
 -- STRATEGI:
 --   • Klass 2 kontrolleras FÖRE klass 1 (undviker att "<1 g/L" matchas som 1)
 --   • Klass 1 kräver att extraherad siffra är >= 1 g/L
 --   • Klass 0 använder bara de två vanligaste stereotypa fraserna
 --   • Klass 3 hanteras inte här – för många varianter, LLM klarar det bättre
---   • Klass 4 - svåra fall som måste kollas manuellt.
+--   • Klass 4&5 - svåra fall som måste kollas manuellt.
 -- =============================================================================
 
 UPDATE protein_data
@@ -147,9 +150,30 @@ SET auto_classification = CASE
     WHEN lower(interpretation) LIKE '%ingen m-komponent är synlig på serumkurvan%' THEN 0
  
     -- =========================================================================
-    -- ALLT ANNAT → klass 4
+    -- ALLT ANNAT → klass 5
     -- =========================================================================
-    ELSE 4
+    ELSE 5
  
 END
 WHERE auto_classification IS NULL;
+
+
+-- mergar med resultatet av llm-klassificeringarna
+DROP TABLE IF EXISTS llm_labels;
+CREATE TABLE llm_labels AS
+SELECT id, new_classification as llm_label FROM read_csv('new_classification.csv',delim=',');
+
+UPDATE protein_data
+SET llm_label = llm_labels.llm_label
+FROM llm_labels
+WHERE protein_data.id = llm_labels.id;
+
+UPDATE protein_data
+SET auto_classification = NULL
+WHERE auto_classification = 5;
+
+
+ALTER TABLE protein_data
+ADD COLUMN label INTEGER;
+
+UPDATE protein_data SET label = COALESCE(auto_classification,llm_label);
