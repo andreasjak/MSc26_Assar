@@ -7,6 +7,14 @@
 - Jag har även nogrannare gått igenom mina manuella klassificeringar. Först tänkte jag att ju högre andel jag klassificerade, desto bättre. Men idag gjorde jag en nogrannare analys, och jämförde mina klassificeringar med IGComponent-kolumnen (döpt till m_component i databasen). I många fall hade jag med falska positiva fall, när läkarna av olika skäl visste att det fanns en svag M-komponent, men den syntes inte på kurvan. Oftast patienter som genomgått behandling och tecknena på M-komponent börjar försvinna. Efter nogrann analys av de fall som är oklassificerade så ska antagligen alla vara det. Det vanligaste fallet är att man gjort nån slags tilläggsanalys. Oerhört nöjd att jag kan skriva SQL-queries på datan. Att köra SELECT interpretation FROM protein_data WHERE manual_classification IS NULL GROUP BY interpretation ORDER BY count(*); var mycket smidigt.
 - Jag testade att nu återigen köra ett oerhört simpelt nätverk, bokstavligen copy pasteat ur pytorchs quickstart-guide. Trots att jag bara köra vanliga linjära/affina-lager eller vad det nu kallas, får jag ca 95% träffsäkerhet på validationsdatan och tydligare konvergens. Jag tror förbättringen därför beror på att jag gjorde etiketteringen av måldatan bättre. Nu är den riktigt bra. 95,5% på test-datan! Tjohej!
 - Testat nu att lägga till delimit_value och delimit_value2 för att få fler features i indatan. Resultat ca 96% på validationsdata och testdata med ett simpelt MLP-nätverk. Med 1D CNN har jag lyckats nå ca 97%! Nu ska jag försöka analysera de fallen som blir fel.
+- Funderat över ifall man kan ha "valde man att beställa fler prover?" som måldata. Svar: njae. Problemet är att man ofta kör många prover på samma patient, och att samma analyser beställs gång på gång trots att det skriker M-komponent. Och i många fall syns en M-komponent redan på direkten, och man behöver då inte fler prover. 
+- Jag har lagt ner lite för mycket tid på att försöka klassificera de ca 24 000 fall som min regex inte klarar av att ta. Det går sådär. Av oklar anledning missar AI:n helt ibland, och klassar felaktigt vissa interpretationer som klass 1 fast de ska vara klass 0. Jag inväntar just nu svar från Oskar, och jag tror jag är ganska nära att lyckas.
+
+### Sanity checks
+- Jag har fixat så att uppdelningen i test och modelldata görs baserat på patient-ID, (15% av patienterna hamnar i test-settet). Så nu förekommer inte samma person i både träning och test. 
+- Jag har nu hittat en modell som jag kallar för "base modell". Det är ett simpelt feed-forward-nätverk, och jag använder i dagsläget bara säker data hittad med regex. 
+- Testat att träna ett nätverk med exakt lika många kvinnor som män i träningsdatan. Det påverkar inte resultatet.
+- Testat att träna ett nätverk med jämn fördelning av ålder. Även om detta dramatiskt minskar mängden träningsdata påverkar det inte resultatet.
 
 ## Min tolkning av datan
 
@@ -36,5 +44,3 @@
 
 
 ### Kommande steg
-- Testa att ha "beställde man ytterligare prover?" som måldata.
-- Göra ett större nätverk: ta med delimitvalues, ta med protein_value för vissa analyser. Testa mer avancerade lager: faltningar, transformers? och annat kul.
