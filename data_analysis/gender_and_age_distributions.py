@@ -36,13 +36,13 @@ women_no_m = women_total - women_m
 
 fig, ax = plt.subplots(figsize=(6, 5))
 
-ax.bar(['Men', 'Women'], [men_no_m, women_no_m], label='No M-component', color='steelblue')
-ax.bar(['Men', 'Women'], [men_m, women_m], bottom=[men_no_m, women_no_m], label='M-component', color='tomato')
+ax.bar(['Men', 'Women'], [men_no_m, women_no_m], label='No M-component')
+ax.bar(['Men', 'Women'], [men_m, women_m], bottom=[men_no_m, women_no_m], label='M-component')
 
 # Procentetiketter inuti staplarna
 for x, (m, total) in enumerate(zip([men_m, women_m], [men_total, women_total])):
     pct = m / total * 100
-    ax.text(x, total + 15, f"{pct:.1f}%", ha='center', fontsize=10, fontweight='bold', color='tomato')
+    ax.text(x, total + 15, f"{pct:.1f}%", ha='center', fontsize=10, fontweight='bold')
 
 ax.set_ylabel("Count")
 ax.set_title("Gender distribution with M-component prevalence")
@@ -65,7 +65,7 @@ labels = [f"{i}-{i+10}" for i in range(0, max_age, 10)]
 #plot 1: fördelningen av ålder i datan
 df['age_bin'] = pd.cut(df['age_num'], bins=bins,labels=labels)
 plt.figure(figsize=(8, 4))
-df['age_bin'].value_counts().sort_index().plot(kind='bar', color='steelblue', edgecolor='white')
+df['age_bin'].value_counts().sort_index().plot(kind='bar')
 plt.xlabel("Age")
 plt.ylabel("Count")
 plt.title("Age distribution")
@@ -78,7 +78,7 @@ plt.show()
 result = df.groupby('age_bin', observed=True)['has_m'].mean() * 100
 
 plt.figure(figsize=(8, 4))
-result.plot(marker='o', color='steelblue')
+result.plot(marker='o')
 plt.xticks(rotation=45, ha='right', fontsize=9)
 plt.ylabel("Percentage with M-component (%)")
 plt.xlabel("Age bin")
@@ -89,7 +89,7 @@ plt.show()
 #plot 3: fördelningen av M-komponentpatienternas ålder
 m_component = df[df['has_m'] == 1]
 plt.figure(figsize=(8, 4))
-m_component['age_bin'].value_counts().sort_index().plot(kind='bar', color='steelblue', edgecolor='white')
+m_component['age_bin'].value_counts().sort_index().plot(kind='bar')
 plt.xlabel("Age")
 plt.ylabel("Count")
 plt.title("Age distribution amongst cases with M-component")

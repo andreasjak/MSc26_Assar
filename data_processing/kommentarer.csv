@@ -1,0 +1,138 @@
+nr,kommentar
+1,Inga tecken på inflammation. Normala immunglobulinhalter. Ingen M-komponent påvisas i serum.
+2,Inga tecken på inflammation. Normala immunglobulinhalter. Ingen M-komponent påvisas i serum. Inga hållpunkter för Bence-Jones proteinuri.
+3,Inga tecken på inflammation. Normala immunglobulinhalter. Ingen M-komponent påvisas i serum. Ingen signifikant proteinuri.
+4,Inga tecken på inflammation. Immunglobuliner med normala halter och polyklonal fördelning. Ingen M-komponent påvisas i serum.
+5,Inga tecken på inflammation. Immunglobuliner med normala halter och är polyklonal fördelning. Ingen M-komponent påvisas i serum. Inga hållpunkter för Bence-Jones proteinuri.
+8,Hypoalbuminemi.
+9,Påtaglig hypoalbuminemi.
+10,Grav hypoalbuminemi.
+11,Breddökad albumintopp vilket kan ses vid ikterus eller uremi eller inbindning till läkemedel.
+12,Atypiskt utseende på albumintoppen som inger misstanke om genetisk albuminvariant.
+13,Genetisk albuminvariant utan känd klinisk relevans.
+16,-stegring som enda tecken på inflammation.
+17,Lätt förhöjd halt av CRP som enda tecken på inflammation.
+18,Förhöjd halt av haptoglobin som enda tecken på inflammation.
+19,Inga säkra tecken på inflammation.
+20,Inga tecken på inflammation.
+21,Tecken på diskret inflammation.
+22,Tecken på lätt inflammation.
+23,Tecken på lätt-måttlig inflammation.
+24,Tecken på måttlig inflammation.
+25,Tecken på måttlig-kraftig inflammation.
+26,Tecken på kraftig inflammation.
+27,Tecken på mycket kraftig inflammation.
+30,Lätt sänkt halt av antitrypsin.
+31,Önskar man påvisa/utesluta anlag för ärftlig antitrypsinbrist krävs Pi-typning.
+32,Lätt sänkt halt av antitrypsin. Önskar man påvisa/utesluta anlag för ärftlig antitrypsinbrist krävs Pi-typning.
+33,Patienten kan vara anlagsbärare för ärftlig antitrypsinbrist. Pi-typning krävs för att påvisa/utesluta detta.
+35,Påtagligt sänkt halt av antitrypsin vilket inger misstanke om ärftlig antitrypsinbrist. Pi-typning bör övervägas.
+36,Påtagligt sänkt halt av antitrypsin vilket inger misstanke om ärftlig antitrypsinbrist. Pi-typning rekommenderas.
+37,Misstanke om genetisk antitrypsinvariant. För definitiv diagnos krävs Pi-typning.
+40,Sänkt halt av haptoglobin som vid ökad erytrocytomsättning.
+41,Haptoglobinelimination som vid hemolys.
+42,Sänkt haptoglobinhalt vilket kan ses vid såväl hemolys som leverpåverkan.
+43,Konstellation av akutfasreaktanter förenlig med leverpåverkan och eller ökad erytrocytomsättning/hemolys.
+44,Konstellation av akutfasreaktanter förenlig med leverpåverkan och eller ökad erytrocytomsättning.
+45,Leverpåverkan kan inte uteslutas.
+46,Förhöjd halt av antitrypsin.
+47,Leverpåverkan?
+48,Östrogenpåverkan?
+50,Elektroferogrammets transferrinfraktion ter sig klart förhöjd.
+52,Elektroferogrammets transferrinfraktion är knappt synlig trots att ingen påtaglig inflammatorisk aktivitet föreligger.
+55,Järnstatus?
+56,Bestämning av patientens järnstatus kan vara av värde.
+65,Normala immunglobulinhalter.
+66,Immunglobuliner med normala halter.
+67,Immunglobuliner med normala halter. Ingen M-komponent påvisas i serum.
+68,Immunglobuliner med normala halter och polyklonal fördelning.
+69,Immunglobuliner med normala halter och polyklonal fördelning. Ingen M-komponent påvisas i serum.
+70,Förhöjd halt av Ig
+71,Förhöjd halt av Ig med polyklonal immunglobulinfördelning. Ingen M-komponent påvisas i serum.
+72,Förhöjd halt av Ig med polyklonal immunglobulinfördelning.
+73,Lätt förhöjd halt av Ig med polyklonal immunglobulinfördelning. Ingen M-komponent påvisas i serum.
+74,Sänkta immunglobulinhalter.
+75,Är orsaken till immunglobulin-sänkningen ej känd rekommenderas analys av U-proteinprofil för att utesluta Bence-Jones proteinuri.
+76,Även analys av fria lätta Ig-kedjor i serum kan vara av värde.
+78,IgA-halt <0.07 g/L inger misstanke om medfödd selektiv IgA-brist.
+79,Partiell selektiv IgA-brist.
+80,Patientens Ig-M-komponent har idag en halt på g/L.
+81,Ig-M-komponentens halt har idag stigit till g/L.
+82,Ig-M-komponentens halt är idag väsentligen oförändrad på g/L.
+83,Ig-M-komponentens halt har idag sjunkit till g/L.
+85,Patienten har en för oss nyupptäckt Ig M-komponent på g/L (immunfixation utförd). Bakgrundsimmunglobulin-nivån är
+87,Immunfixation av serum visar en svag bandskärpning positiv för Ig
+90,Bakgrundsimmunglobulin-nivån är ej sänkt.
+91,Bakgrundsimmunglobulin-nivån är välbevarad.
+92,Bakgrundsimmunglobulin-nivån är på gränsen till sänkt.
+93,Bakgrundsimmunglobulin-nivån är lätt sänkt.
+94,Bakgrundsimmunglobulin-nivån är måttligt sänkt.
+95,Bakgrundsimmunglobulin-nivån är kraftigt sänkt.
+96,Bakgrundsimmunglobulin-nivån är sänkt.
+97,Ingen M-komponent påvisas i serum.
+98,Ingen M-komponent påvisas i serum (immunfixation utförd).
+100,Fyndet är av oklar siginfikans.
+101,Uppföljande S-proteinprofil rekommenderas.
+102,Uppföljande S- och U-proteinprofil rekommenderas.
+103,Uppföljande S- och U-proteinprofil rekommenderas. Även undersökning av S-fria lätta Ig-kedjor kan vara av värde.
+104,Även undersökning av S-fria lätta Ig-kedjor kan vara av värde.
+105,Med anledning av att patienten har en lätt-kedje-komponent rekommenderas samtidig S- och U-proteinprofil för att följa patienten.
+106,Kompletterande analys av U-proteinprofil rekommenderas för värdering av eventuell signifikant Bence-Jones proteinuri.
+107,Lätt avvikande immunglobulinfördelning.
+108,M-komponent < 1 g/L? Specifik immunisering?
+110,Immunfixation utförd på serum.
+111,Immunfixation utförd på urin.
+112,Immunfixation utförd på serum och urin.
+113,(immunfixation utförd).
+114,(immunfixation ej utförd idag).
+115,Ingen immunfixation utförd.
+120,Oligoklonal fördelning av immunglobulinerna.
+121,Liten abnormal fraktion i elektroferogrammets gammaregion.
+198,Halten av fria kappa- och lambdakedjor samt kvoten av fria kappa/lambda-kedjor i serum är normala vilket talar emot monoklonal produktion av fria lätta immunglobulinkedjor.
+199,Kvoten fria kappa/lambda-kedjor i serum är normal vilket talar emot monoklonal produktion av fria lätta immunglobulinkedjor.
+200,Kvoten fria kappa/lambda-kedjor i serum är normal.
+201,Kvoten fria kappa/lambda-kedjor i serum är förhöjd.
+202,Kvoten fria kappa/lambda-kedjor i serum är kraftigt förhöjd.
+203,Halten av fria kappakedjor och kvoten fria kappa/lambda-kedjor i serum är förhöjda vilket talar för monoklonal produktion av fria kappakedjor.
+204,Halten av fria kappakedjor och kvoten fria kappa/lambda-kedjor i serum är kraftigt förhöjda vilket starkt talar för monoklonal produktion av fria kappakedjor.
+205,Kvoten fria kappa/lambda-kedjor i serum är sänkt.
+206,Kvoten fria kappa/lambda-kedjor i serum är kraftigt sänkt.
+207,Halten av fria lambdakedjor är förhöjd och kvoten fria kappa/lambda-kedjor i serum är sänkt vilket talar för monoklonal produktion av fria lambdakedjor.
+208,Halten av fria lambdakedjor är kraftigt förhöjd och kvoten fria kappa/lambda-kedjor i serum är kraftigt sänkt vilket starkt talar för monoklonal produktion av fria lambdakedjor.
+209,vilket stämmer väl med monoklonal produktion av fria kappakedjor.
+210,vilket stämmer väl med monoklonal produktion av fria lambdakedjor.
+300,Serum kan tyvärr inte analyseras eftersom serumprov saknas.
+800,Urin kan tyvärr inte analyseras eftersom urinprov saknas.
+802,Normala proteinhalter i urinen.
+803,Ingen signifikant proteinuri.
+805,Lätt-måttlig proteinuri.
+806,Kraftig proteinuri.
+807,Massiv proteinuri.
+808,Tubulärt proteinmönster i urinen.
+810,Albuminuri.
+811,Påtaglig albuminuri.
+812,Kraftig albuminuri.
+813,Förhöjd halt av protein HC i urinen.
+814,Kraftigt förhöjd halt av protein HC i urinen.
+815,Förhöjda halter av protein HC och kappakedjor i urinen.
+816,Förhöjda halter av protein HC och kappa- och lambdakedjor i urinen.
+819,Även förhöjda nivåer av andra proteiner i urinen.
+820,Inga mätbara halter av lätta immunglobulinkedjor i urinen.
+821,Ej förhöjda halter av lätta immunglobulinkedjor i urinen.
+822,Ej förhöjd halt av kappakedjor i urinen.
+823,Ej förhöjd halt av lambdakedjor i urinen.
+824,Inga hållpunkter för Bence-Jones proteinuri.
+825,Ingen Bence-Jones proteinuri (immunfixation utförd).
+826,Lätt förhöjd halt av kappakedjor i urinen.
+827,Lätt förhöjd halt av lambdakedjor i urinen.
+828,Förhöjd halt av kappakedjor i urinen.
+829,Förhöjd halt av lambdakedjor i urinen.
+830,Kvoten U-Kappa/U-Lambda kan ej bestämmas. Bence-Jones proteinuri av låg halt kan ej uteslutas.
+831,Kvoten U-Kappa/U-Lambda är normal vilket talar emot förekomst av Bence-Jones proteinuri.
+832,Kvoten U-Kappa/U-Lambda är normal.
+833,Kvoten U-Kappa/U-Lambda är långt utanför normalområdet vilket inger stark misstanke om monoklonal immunglobulinproduktion. Komplettera med samtidig analys av S- och U-Proteinprofil. Även analysen S-Fria lätta Ig-kedjor (FLC) kan vara av värde.
+840,Bence-Jones proteinuri av typ kappa.
+841,Bence-Jones proteinuri av typ lambda.
+845,Utsöndring av X g kappakedjor/mol kreatinin.
+846,Utsöndring av X g lambdakedjor/mol kreatinin.
+901,Normala proteinhalter i urinen. Inga hållpunkter för Bence-Jones proteinuri.
