@@ -147,8 +147,8 @@ def load_models(device):
 
     CNNModel = CNNNetwork().to(device)
     AutoEncoderModel = Autoencoder().to(device)
-    CNNModel.load_state_dict(torch.load("networks/convolution_model.pth", weights_only=True))
-    AutoEncoderModel.load_state_dict(torch.load("networks/auto_encoder_model.pth", weights_only=True))
+    CNNModel.load_state_dict(torch.load("convolution_model.pth", weights_only=True))
+    AutoEncoderModel.load_state_dict(torch.load("auto_encoder_model.pth", weights_only=True))
     return (AutoEncoderModel,CNNModel)
 
 def get_autoencoder_reconstructions(dataloader, AutoEncoderModel, device):
@@ -157,7 +157,9 @@ def get_autoencoder_reconstructions(dataloader, AutoEncoderModel, device):
     
     with torch.no_grad():
         for batch in dataloader:
-            inputs = batch[0].to(device)
+            inputs = batch[0]
+            inputs = inputs[:,0:300]
+            inputs = inputs.to(device)
             outputs = AutoEncoderModel(inputs)
             reconstructions.append(outputs.cpu().numpy())
             
@@ -203,32 +205,31 @@ def predict(ids: list[int], df: pd.DataFrame) -> pd.DataFrame:
         shuffle=False
     )
 
-    for X, y,_ in dataloader:
-        print(f"Shape of X: {X.shape}")
-        print(f"Shape of y: {y.shape}")
-
     device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
     print(f"Using {device} device")
         
     (auto_encoder_model, cnn_model) = load_models(device)
     reconstructions = get_autoencoder_reconstructions(dataloader,auto_encoder_model,device)
-    rows['cnn_probabilities'] = predict_cnn(dataloader,cnn_model,device)
+    rows['cnn_probability'] = predict_cnn(dataloader,cnn_model,device)
+    rows['reconstructions'] = list(reconstructions)
 
     X_curves = np.stack(rows['value'])
-    squared_errors = np.power((X_curves-reconstructions),2)
-    rows['total_squared_error_gamma_region'] = squared_errors.apply(lambda x: np.sum(x[190:265])) / 1000
+    squared_errors = np.array(np.power((X_curves-reconstructions),2))
+
+    rows['total_squared_error_gamma_region'] = np.sum(squared_errors[:, 190:265], axis=1) / 1000
+    rows['proportion_gamma_region'] = 100*np.sum(squared_errors[:, 200:285], axis=1) /np.sum(squared_errors[:,:],axis=1)
 
     logistic_model = joblib.load('logistic_regression.pkl')
     log_probabilities = logistic_model.predict_proba(np.array(rows['total_squared_error_gamma_region']).reshape(-1,1))
-    rows['encoder_probabilities'] = log_probabilities[:,1]
+    rows['encoder_probability'] = log_probabilities[:,1]
 
-    threshold_cnn = 0.25
-    threshold_encoder = 0.25
+    rows['prob_product'] = np.multiply(rows['cnn_probability'],rows['encoder_probability'])
+    rows['prob_sum'] = np.add(rows['cnn_probability'],rows['encoder_probability'])
 
-    rows['predictions'] = (rows['cnn_probabilities'] >= threshold_cnn) | (rows['encoder_probabilities'] >= threshold_encoder)
-
-    rows['prob_product'] = np.multiply(rows['cnn_probs'],rows['encoder_probabilities'])
-
+    meta_model = joblib.load('meta_model.pkl')
+    rows['joint_prob'] = meta_model.predict(np.column_stack([rows['cnn_probability'], rows['encoder_probability']]))
+    
+    rows['prediction'] = (rows['joint_prob'] == 1) | (rows['proportion_gamma_region'] > 30)
     return rows
 
 
