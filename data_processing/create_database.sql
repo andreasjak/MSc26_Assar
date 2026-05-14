@@ -3,8 +3,9 @@ DROP TABLE IF EXISTS protein_data;
 CREATE TABLE protein_data AS
 SELECT
     row_number() OVER() AS id,
-    PID as pid,
     TimeStamp as time_stamp,
+    ROW_NUMBER() OVER (PARTITION BY pid ORDER BY time_stamp) as observation_nr,
+    PID as pid,
     Interpretation as interpretation,
     Sign as sign,
     SignTime as sign_time,
@@ -17,12 +18,16 @@ SELECT
     -- Övriga kolumner som de är
     string_split(Analysis, '^')      AS analysis,
     string_split(PValue, '^')        AS protein_value,  -- behåll som text pga <0.30 etc
+    string_split(Reference,'^')      AS reference,
     string_split(Comment, '^')       AS comment,
     string_split(Flags, '^')         AS flags,
     SampleInfo as sample_info,
     gender,
     age,
-    IGComponent as m_component
+    IGComponent as m_component,
+    S_IGG_total as total_igg,
+    S_IGA_total as total_iga,
+    S_IGM_total as total_igm
 
 FROM read_csv('proteindata.csv', delim=';', header=true, null_padding=true, parallel = false);
 
@@ -156,5 +161,24 @@ SET auto_classification = CASE
  
 END
 WHERE auto_classification IS NULL;
+ALTER TABLE protein_data ADD COLUMN llm_label INTEGER;
+DROP TABLE IF EXISTS llm_labels;
+CREATE TABLE llm_labels AS
+SELECT id, new_classification as llm_label FROM read_csv('new_classification.csv',delim=',');
+
+UPDATE protein_data
+SET llm_label = llm_labels.llm_label
+FROM llm_labels
+WHERE protein_data.id = llm_labels.id;
+
+UPDATE protein_data
+SET auto_classification = NULL
+WHERE auto_classification = 5;
+
+
+ALTER TABLE protein_data
+ADD COLUMN label INTEGER;
+
+UPDATE protein_data SET label = COALESCE(auto_classification,llm_label);
 
 
