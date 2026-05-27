@@ -101,8 +101,8 @@ def pre_process_data(df: pd.DataFrame) -> pd.DataFrame:
     rows = split_sets(df)
     rows = rows[ rows['value'].apply(len).isin([300,301]) ] #de flesta har en onödig datapunkt
     rows['value'] = rows['value'].apply(lambda x: x[:300]) #ta bort onödiga datapunkten
-    rows = extract_protein_values(rows) 
     rows['age'] = rows['age'].apply(parse_age)
+    rows = extract_protein_values(rows) 
     rows = rows.apply(find_proportions, axis=1)
     return rows
 

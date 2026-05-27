@@ -1,0 +1,112 @@
+from sklearn.metrics import roc_auc_score
+import torch
+import numpy as np
+
+
+def train_epoch(dataloader, model, loss_fn, optimizer, device, autoencoder=False):
+    """En träningsepok. autoencoder=True betyder att target är X själv."""
+    model.train()
+    total_loss = 0
+    for batch in dataloader:
+        X = batch[0].to(device)
+        y = X if autoencoder else batch[1].to(device)
+
+        optimizer.zero_grad()
+        output = model(X)
+        loss = loss_fn(output, y)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+
+    return total_loss / len(dataloader)
+
+
+def validate_epoch(dataloader, model, loss_fn, device, autoencoder=False):
+    """En valideringsepok."""
+    model.eval()
+    size = len(dataloader.dataset)
+    num_batches = len(dataloader)
+    test_loss, correct = 0, 0
+    all_probs = []
+    all_targets = []
+    with torch.no_grad():
+        for X,y,_ in dataloader:
+            if autoencoder:
+                y = X
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            test_loss += loss_fn(pred, y).item()
+            if not autoencoder:
+                correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+                probs = torch.softmax(pred, dim=1)[:, 1]
+                all_probs.extend(probs.cpu().numpy())
+                all_targets.extend(y.cpu().numpy().astype(int))
+    test_loss /= num_batches
+    if not autoencoder:
+        correct /= size
+        auc = roc_auc_score(all_targets, all_probs)
+        return ({"accuracy": 100 * correct,"auc": auc}, test_loss)
+
+    return (None,test_loss)
+
+
+def train_loop(
+    train_dl,
+    val_dl,
+    model,
+    loss_fn,
+    optimizer,
+    scheduler,
+    save_path,
+    epochs=1000,
+    patience=5,
+    device='cpu',
+    autoencoder=False,
+):
+    """
+    Gemensam träningsloop för CNN och autoencoder.
+    
+    Args:
+        train_dl:    DataLoader för träning
+        val_dl:      DataLoader för validering
+        model:       PyTorch-modell
+        loss_fn:     förlustfunktion
+        optimizer:   optimizer
+        scheduler:   LR-scheduler
+        save_path:   sökväg för att spara bästa modell
+        epochs:      max antal epoker
+        patience:    early stopping – antal epoker utan förbättring
+        device:      'cpu', 'cuda', 'mps' etc
+        autoencoder: True om target = input (rekonstruktion)
+    """
+    best_val_loss = float('inf')
+    no_improve = 0
+
+    for t in range(epochs):
+        train_loss = train_epoch(train_dl, model, loss_fn, optimizer, device, autoencoder)
+        metrics,val_loss   = validate_epoch(val_dl, model, loss_fn, device, autoencoder)
+        scheduler.step(val_loss)
+
+        if not autoencoder:
+            print(
+                f"Epoch {t:>3} | "
+                f"train: {train_loss:.4f} | "
+                f"val: {val_loss:.4f} | "
+                f"acc: {metrics['accuracy']:.2f}% | "
+                f"AUC: {metrics['auc']:.3f}"
+            )
+        else:
+            print(f"Epoch {t:>3} | train: {train_loss:.4f} | val: {val_loss:.4f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            no_improve = 0
+            torch.save(model.state_dict(), save_path)
+            print(f"  -> ny bästa modell sparad till {save_path}")
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"Early stopping efter {t+1} epoker.")
+                break
+
+    print("Klar!")
