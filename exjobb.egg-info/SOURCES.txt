@@ -1,4 +1,7 @@
 pyproject.toml
+application/__init__.py
+application/application.py
+application/main.py
 exjobb.egg-info/PKG-INFO
 exjobb.egg-info/SOURCES.txt
 exjobb.egg-info/dependency_links.txt
@@ -13,7 +16,10 @@ networks/__init__.py
 networks/auto_encoder.py
 networks/cnn_batchnorm.py
 networks/cnn_dilated_convolutions.py
+networks/cnn_large_batchnorm.py
 networks/cnn_maxpooling.py
 networks/cnn_network.py
+networks/cnn_no_maxpooling.py
+networks/cnn_no_proteins.py
 networks/inflammation_network.py
 networks/oligoclonal_network.py

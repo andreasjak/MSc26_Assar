@@ -15,34 +15,44 @@ device = torch.accelerator.current_accelerator().type if torch.accelerator.is_av
 class CNNNetwork(nn.Module):
     def __init__(self):
         super().__init__()
+        # CNN-del – bara för kurvan (300 punkter)
         self.features = nn.Sequential(
             nn.Conv1d(in_channels=1, out_channels=32, kernel_size=7, padding=3),
             nn.ReLU(),
             nn.MaxPool1d(2),
-
             nn.Conv1d(32, 64, kernel_size=5, padding=2),
             nn.ReLU(),
             nn.MaxPool1d(2),
-
             nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.ReLU()
         )
         self.gap = nn.AdaptiveAvgPool1d(1)
+
+        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
+        self.tabular = nn.Sequential(
+            nn.Linear(26, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU()
+        )
+
+        # Gemensam klassificerare – CNN-features (128) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(128, 64),
+            nn.Linear(128 + 32, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
         )
 
     def forward(self, x):
-        if x.dim() == 2:
-            x = x.unsqueeze(1)
-        x = self.features(x)
-        x = self.gap(x)
-        x = torch.flatten(x, 1)
-        x = self.classifier(x)
-        return x
+        curve   = x[:, :300].unsqueeze(1)
+        tabular = x[:, 300:]
+
+        curve_features   = torch.flatten(self.gap(self.features(curve)), 1)  # (n, 128)
+        tabular_features = self.tabular(tabular)                              # (n, 32)
+
+        combined = torch.cat([curve_features, tabular_features], dim=1)      # (n, 160)
+        return self.classifier(combined)
 
 
 class CNNModel:
@@ -52,6 +62,7 @@ class CNNModel:
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
         self.scaler = joblib.load(scaler_path)
+        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
 
     def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
         """Beräknar P(M-komponent) och skriver till df['cnn_probability']."""
@@ -105,6 +116,28 @@ class CNNModel:
         X[:, 300:] = self.scaler.transform(X[:, 300:])
         return X
     
+def build_dataloader(rows, batch_sz=512):
+    protein_cols = [a.col for a in ANALYTES[:8]]
+    rows = rows.dropna(subset=protein_cols)
+
+    X = np.concatenate([
+        np.array(rows['value'].tolist(),      dtype=np.float32),
+        np.array(rows['fractions'].tolist(),  dtype=np.float32),
+        np.array(rows['boundaries'].tolist(), dtype=np.float32),
+        np.array(rows[protein_cols].values,   dtype=np.float32),
+    ], axis=1)
+
+    scaler = joblib.load('../models/scaler.pkl')
+    X[:, 300:] = scaler.transform(X[:, 300:])
+
+    y = torch.tensor(rows['label'].values, dtype=torch.long)
+    ids = torch.tensor(rows['id'].to_numpy(), dtype=torch.long)
+    X = torch.tensor(X, dtype=torch.float32)
+
+    dataset = TensorDataset(X, y, ids)
+
+    return DataLoader(dataset, batch_size=batch_sz, shuffle=True)
+
 def build_dataloaders(train_rows, val_rows, test_rows, batch_sz=512):
     protein_cols = [a.col for a in ANALYTES[:8]]
     train_rows = train_rows.dropna(subset=protein_cols)

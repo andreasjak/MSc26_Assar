@@ -250,10 +250,10 @@ def interpret(row: dict) -> dict:
     )
     plt.subplots_adjust(bottom=0.3, hspace=0.3, wspace=0.3)
 
-    ax1.plot(row.loc[idx, 'reconstructions'], label='Reconstruction', linewidth=1.5)
+    #ax1.plot(row.loc[idx, 'reconstructions'], label='Reconstruction', linewidth=1.5)
     ax1.plot(row.loc[idx, 'value'], label='Original', linewidth=1.5)
-    ax1.fill_between(range(300), row.loc[idx, 'value'], row.loc[idx, 'reconstructions'],
-                     color='red', alpha=0.2, label='Error')
+    #ax1.fill_between(range(300), row.loc[idx, 'value'], row.loc[idx, 'reconstructions'],
+    #                 color='red', alpha=0.2, label='Error')
     ax1.legend()
 
     error = row.loc[idx, 'value'] - row.loc[idx, 'reconstructions']

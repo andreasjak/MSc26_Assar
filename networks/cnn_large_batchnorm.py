@@ -15,36 +15,38 @@ device = torch.accelerator.current_accelerator().type if torch.accelerator.is_av
 class CNNNetwork(nn.Module):
     def __init__(self):
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1, dilation=1),
-            nn.BatchNorm1d(32),
-            nn.ReLU(),
-
-            nn.Conv1d(32, 64, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-
-            nn.Conv1d(64, 128, kernel_size=3, padding=4, dilation=4),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-
-            nn.Conv1d(128, 128, kernel_size=3, padding=4, dilation=8),
-            nn.BatchNorm1d(128),
-            nn.ReLU()
+        # Smal gren – liten kernel för att fånga spetsiga M-komponenter
+        self.narrow = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm1d(32), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=3, padding=1),
+            nn.BatchNorm1d(64), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128), nn.ReLU(),
+            nn.Conv1d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128), nn.ReLU(),
         )
+        # Bred gren – stor kernel för kontext
+        self.wide = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=11, padding=5),
+            nn.BatchNorm1d(32), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(32, 64, kernel_size=7, padding=3),
+            nn.BatchNorm1d(64), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(64, 128, kernel_size=5, padding=2),
+            nn.BatchNorm1d(128), nn.ReLU(),
+            nn.Conv1d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm1d(128), nn.ReLU(),
+        )
+        self.gap = nn.AdaptiveAvgPool1d(1)
 
-
-        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
         self.tabular = nn.Sequential(
-            nn.Linear(26, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU()
+            nn.Linear(26, 64), nn.ReLU(), nn.Linear(64, 32), nn.ReLU()
         )
-
-        # Gemensam klassificerare – CNN-features (256) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(256 + 32, 64),
+            nn.Linear(256 + 32, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
@@ -54,25 +56,21 @@ class CNNNetwork(nn.Module):
         curve   = x[:, :300].unsqueeze(1)
         tabular = x[:, 300:]
 
-        curve   = self.features(curve)
-        avg_pool = torch.mean(curve, dim=2)
-        max_pool = torch.max(curve, dim=2).values
-        curve_features   = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        tabular_features = self.tabular(tabular)                    # (n, 32)
+        narrow = torch.flatten(self.gap(self.narrow(curve)), 1)  # (n, 64)
+        wide   = torch.flatten(self.gap(self.wide(curve)), 1)    # (n, 64)
+        curve_features   = torch.cat([narrow, wide], dim=1)      # (n, 128)
+        tabular_features = self.tabular(tabular)                  # (n, 32)
 
-        combined = torch.cat([curve_features, tabular_features], dim=1)  # (n, 288)
-        return self.classifier(combined)
+        return self.classifier(torch.cat([curve_features, tabular_features], dim=1))
 
 
 class CNNModel:
     def __init__(self,
-                 model_path='../models/convolution_dilated_version.pth',
+                 model_path='../models/convolution_model_larger.pth',
                  scaler_path='../models/scaler.pkl'):
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
         self.scaler = joblib.load(scaler_path)
-        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
-        self.model.to(device)
 
     def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
         """Beräknar P(M-komponent) och skriver till df['cnn_probability']."""

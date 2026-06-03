@@ -16,69 +16,52 @@ class CNNNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1, dilation=1),
-            nn.BatchNorm1d(32),
+            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=7, padding=3),
             nn.ReLU(),
+            nn.MaxPool1d(2),
 
-            nn.Conv1d(32, 64, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(32, 64, kernel_size=5, padding=2),
             nn.ReLU(),
+            nn.MaxPool1d(2),
 
-            nn.Conv1d(64, 128, kernel_size=3, padding=4, dilation=4),
-            nn.BatchNorm1d(128),
-            nn.ReLU(),
-
-            nn.Conv1d(128, 128, kernel_size=3, padding=4, dilation=8),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.ReLU()
         )
 
 
-        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
-        self.tabular = nn.Sequential(
-            nn.Linear(26, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU()
-        )
-
-        # Gemensam klassificerare – CNN-features (256) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(256 + 32, 64),
+            nn.Linear(256, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
         )
 
     def forward(self, x):
-        curve   = x[:, :300].unsqueeze(1)
-        tabular = x[:, 300:]
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
 
-        curve   = self.features(curve)
-        avg_pool = torch.mean(curve, dim=2)
-        max_pool = torch.max(curve, dim=2).values
-        curve_features   = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        tabular_features = self.tabular(tabular)                    # (n, 32)
+        x = self.features(x)
 
-        combined = torch.cat([curve_features, tabular_features], dim=1)  # (n, 288)
-        return self.classifier(combined)
+        avg_pool = torch.mean(x, dim=2)
+        max_pool = torch.max(x, dim=2).values
+
+        x = torch.cat([avg_pool, max_pool], dim=1)
+
+        x = self.classifier(x)
+        return x
 
 
 class CNNModel:
     def __init__(self,
-                 model_path='../models/convolution_dilated_version.pth',
-                 scaler_path='../models/scaler.pkl'):
+                 model_path='../models/convolution_model_no_proteins.pth'):
         self.model_path = model_path
+        self.model.load_state_dict(torch.load(model_path, weights_only=True))
         self.model = CNNNetwork().to(device)
-        self.scaler = joblib.load(scaler_path)
-        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
-        self.model.to(device)
 
-    def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
+    def predict(self, df: pd.DataFrame) -> pd.DataFrame:
         """Beräknar P(M-komponent) och skriver till df['cnn_probability']."""
         X = self._build_X(df)
         dataloader = DataLoader(TensorDataset(torch.tensor(X)), batch_size=512)
-        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
         self.model.eval()
         all_probs = []
         with torch.no_grad():
@@ -92,14 +75,11 @@ class CNNModel:
         return df
     
     def _build_X(self, df: pd.DataFrame) -> np.ndarray:
-        protein_cols = [a.col for a in ANALYTES[:8]]
         X = np.concatenate([
             np.array(df['value'].tolist(),      dtype=np.float32),  # (n, 300)
             np.array(df['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
             np.array(df['boundaries'].tolist(), dtype=np.float32),  # (n, 12)
-            np.array(df[protein_cols].values,   dtype=np.float32),  # (n, 8)
         ], axis=1)
-        X[:, 300:] = self.scaler.transform(X[:, 300:])
         return X
 
     def retrain(self, train_dl, val_dl, epochs=10000, patience=5,model_path=None):
