@@ -14,15 +14,14 @@ CREATE TABLE comment_frequencies (
 CREATE TABLE comment_precences AS (
     SELECT id AS row_id, comment_nr FROM comments c
     JOIN protein_data p
-        ON p.interpretation ILIKE '%' || TRIM(TRAILING '.' FROM c.comment) || '%'
+        ON REPLACE(p.interpretation, ',', '') ILIKE '%' || TRIM(TRAILING '.' FROM c.comment) || '%'
     ORDER BY row_id
 );
 
-INSERT INTO comment_frequencies(comment_nr,frequency) (
-    SELECT comment_nr, count(*) FROM comments c
-    JOIN protein_data p
-        ON p.interpretation ILIKE '%' || TRIM(TRAILING '.' FROM c.comment) || '%'
-    GROUP BY c.comment_nr
-    ORDER BY c.comment_nr
+INSERT INTO comment_frequencies(comment_nr, frequency) (
+    SELECT comment_nr, count(*) 
+    FROM comment_precences
+    GROUP BY comment_nr
+    ORDER BY comment_nr
 );
-
+ 

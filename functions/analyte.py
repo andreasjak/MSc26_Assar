@@ -32,6 +32,21 @@ ANALYTES = [
 ANALYSIS_MAP = {a.analysis_nr: a.col for a in ANALYTES}
 PROTEIN_LABELS = [a.name for a in ANALYTES]
 
+def get_analyte(name: str) -> Analyte:
+    for analyte in ANALYTES:
+        if name.lower() == analyte.name.lower(): return analyte
+    return None
+
+def get_analyte_by_column_name(col_name: str) -> Analyte:
+    for analyte in ANALYTES:
+        if col_name.lower() == analyte.col: return analyte
+    return None
+
+def get_analyte_by_analysis_nr(analysis_nr: str) -> Analyte:
+    for analyte in ANALYTES:
+        if analysis_nr == analyte.analysis_nr: return analyte
+    return None
+
 def get_refs(gender: str) -> list[tuple]:
     return [a.ref_male if gender == 'M' else a.ref_female for a in ANALYTES]
 

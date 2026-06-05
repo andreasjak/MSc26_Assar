@@ -122,3 +122,21 @@ class InflammationModel:
             print(f"Error > {thresh} nivåer: {pct:.1f}%")
 
         return {'mae': mae, 'bias': bias, 'false_negatives': fn}
+    
+
+
+
+def comment_inflammation(df) -> str:
+    severity = df['inflammation'][0]
+    crp = df['crp'][0]
+    if severity == 0 and crp > 3.0:
+        return "Lätt förhöjd halt av CRP som enda tecken på inflammation. "
+    match severity:
+        case 0: return "Inga tecken på inflammation. "
+        case 1: return "Tecken på diskret inflammation. "
+        case 2: return "Tecken på lätt inflammation. "
+        case 3: return "Tecken lätt-måttlig inflammation. "
+        case 4: return "Tecken på måttlig inflammation. "
+        case 5: return "Tecken på måttlig-kraftig inflammation. "
+        case 6: return "Tecken på kraftig inflammation. "
+        case 7: return "Tecken på mycket kraftig inflammation. "

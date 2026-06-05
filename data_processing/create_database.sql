@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS protein_data;
 CREATE TABLE protein_data AS
 SELECT
-    row_number() OVER() AS id,
+    row_number() OVER() AS id PRIMARY KEY,
     TimeStamp as time_stamp,
     ROW_NUMBER() OVER (PARTITION BY pid ORDER BY time_stamp) as observation_nr,
     PID as pid,

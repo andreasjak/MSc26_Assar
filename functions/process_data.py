@@ -46,8 +46,12 @@ def analyse_proteins(row):
     
     # Bygg mapping från analysnummer -> värde
     mapping = {}
+    urine_nrs = ['0039','0033','0034','0035','0036']
     for analysis, value in zip(analysis_list, value_list):
-        value = clean_value(value)
+        if analysis in urine_nrs and str(value).strip() == 'KOMM':
+            value = 0.0
+        else:
+            value = clean_value(value)
         mapping[analysis.replace('*', '')] = value
     
     # Överskrid med total-värden om de finns

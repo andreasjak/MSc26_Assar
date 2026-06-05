@@ -10,18 +10,24 @@ def evaluate(df: pd.DataFrame, threshold=0.2, proportion=60) -> pd.DataFrame:
 
     all_probs  = np.array(df['cnn_probability'])
     all_labels = np.array(df['label'])
-    all_ids    = np.array(df['id'])
 
     if 'proportion_gamma_region' in df.columns:
         all_preds  = ((all_probs >= threshold) | (df['proportion_gamma_region'] > proportion)).astype(int)
-        
+        print('using autoencoder model')
     else:
         all_preds = (all_probs >= threshold).astype(int)
 
     df['prediction'] = all_preds
-    print(classification_report(all_labels, all_preds, target_names=['Negativ', 'Positiv']))
-    print(confusion_matrix(all_labels, all_preds))
+    df['final_prediction'] = df['prediction'].copy()
+    df.loc[df['alarming_free_light_chains'] == 1, 'final_prediction'] = 1
+    final_preds = df['final_prediction']
+    print(classification_report(all_labels, final_preds, target_names=['Negativ', 'Positiv']))
+    print(confusion_matrix(all_labels, final_preds))
 
+    new_positives = ((df['prediction'] == 0) & (df['alarming_free_light_chains'] == 1)).sum()
+    print(f"Nya positiva till följd av fria lätta kedjor: {new_positives}")
+
+   
     # ROC-kurva
     fpr, tpr, thresholds = roc_curve(all_labels, all_probs)
 
@@ -30,15 +36,15 @@ def evaluate(df: pd.DataFrame, threshold=0.2, proportion=60) -> pd.DataFrame:
 
     print("AUC:", roc_auc)
 
-    fp = sum((all_labels == 0) & (all_preds == 1))
-    fn = sum((all_labels == 1) & (all_preds == 0))
-    tn = sum((all_labels == 0) & (all_preds == 0))
-    tp = sum((all_labels == 1) & (all_preds == 1))
+    fp = sum((all_labels == 0) & (final_preds == 1))
+    fn = sum((all_labels == 1) & (final_preds == 0))
+    tn = sum((all_labels == 0) & (final_preds == 0))
+    tp = sum((all_labels == 1) & (final_preds == 1))
 
 
     fn_rate = fn / sum(all_labels == 1)
     fp_rate = fp / sum(all_labels == 0)
-    accuracy = sum(all_preds == all_labels) / len(all_preds)
+    accuracy = sum(final_preds == all_labels) / len(final_preds)
     specificity = tn / (tn + fp)
     sensitivity = tp / (tp + fn)
 
