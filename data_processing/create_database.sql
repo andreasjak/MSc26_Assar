@@ -2,7 +2,7 @@
 DROP TABLE IF EXISTS protein_data;
 CREATE TABLE protein_data AS
 SELECT
-    row_number() OVER() AS id PRIMARY KEY,
+    row_number() OVER(ORDER BY PID, TimeStamp) AS row_id,
     TimeStamp as time_stamp,
     ROW_NUMBER() OVER (PARTITION BY pid ORDER BY time_stamp) as observation_nr,
     PID as pid,
@@ -18,6 +18,7 @@ SELECT
     -- Övriga kolumner som de är
     string_split(Analysis, '^')      AS analysis,
     string_split(PValue, '^')        AS protein_value,  -- behåll som text pga <0.30 etc
+    string_split(Unit,'^')           AS unit,
     string_split(Reference,'^')      AS reference,
     string_split(Comment, '^')       AS comment,
     string_split(Flags, '^')         AS flags,
@@ -39,9 +40,7 @@ SET m_component_label = CASE
     ELSE 1
 END;
 
-
-
-
+ALTER TABLE protein_data ADD PRIMARY KEY (row_id);
 ALTER TABLE protein_data ADD COLUMN auto_classification INTEGER; -- följande görs nedan
 
 -- =============================================================================
@@ -50,10 +49,12 @@ ALTER TABLE protein_data ADD COLUMN auto_classification INTEGER; -- följande g�
 -- Klasser:
 --   0 = Ingen M-komponent synlig på serumprovet
 --   1 = Minst en M-komponent synlig (antingen att det står, eller en halt >= 1 g/L angiven)
---   2 = Gränsfall – halt < 1 g/L eller osäker synlighet
+--   2 = halt < 1 g/L eller lätt avvikande fördelning
 --   3 = Tolkningen diskuterar inte serumprovet  → ej användbar för att arbeta med serumkurvor.
 --   4 = Oligoklonal fördelning (görs av LLM)
 --   5 = Måste tas med LLM.
+--   6 = lätt avvikande
+--
 --
 -- STRATEGI:
 --   • Klass 2 kontrolleras FÖRE klass 1 (undviker att "<1 g/L" matchas som 1)
@@ -82,7 +83,7 @@ SET auto_classification = CASE
       OR lower(interpretation) LIKE '%halt på < 1 g/l%'
       OR lower(interpretation) LIKE '%halt på  <1 g/l%'
       OR lower(interpretation) LIKE '%halt på  < 1 g/l%'
-      OR lower(interpretation) LIKE '%halt på mindre än 1%g/l%'
+      OR lower(interpretation) LIKE '%halt på mindre än 1 g/l%'
       OR lower(interpretation) LIKE '%m-komponent <1 g/l%'
       OR lower(interpretation) LIKE '%m-komponent < 1 g/l%'
       OR lower(interpretation) LIKE '%halt%mg/l%'
@@ -106,7 +107,7 @@ SET auto_classification = CASE
             replace(
                 regexp_extract(
                     lower(interpretation),
-                    '(?:halt på|på ca|på cirka)\s*(?:ca\s*|cirka\s*)?(\d+[,\.]\d+|\d+)\s*g/l',
+                    '(?:m-komponent|igg|iga|igm).*?(\d+[,\.]\d+|\d+)\s*g/l',
                     1
                 ),
                 ',', '.'
@@ -117,7 +118,7 @@ SET auto_classification = CASE
             replace(
                 regexp_extract(
                     lower(interpretation),
-                    '(?:halt på|på ca|på cirka)\s*(?:ca\s*|cirka\s*)?(\d+[,\.]\d+|\d+)\s*g/l',
+                    '(?:m-komponent|igg|iga|igm).*?(\d+[,\.]\d+|\d+)\s*g/l',
                     1
                 ),
                 ',', '.'
@@ -138,10 +139,9 @@ SET auto_classification = CASE
     WHEN lower(interpretation) LIKE '%ingen mätbar m-komponent%'                     THEN 0
     WHEN lower(interpretation) LIKE '%ingen m-komponent kan påvisas%'                THEN 0
     WHEN lower(interpretation) LIKE '%ingen säker m-komponent påvisas%'              THEN 0
-    WHEN lower(interpretation) LIKE '%ingen synlig m-komponent i serum%'             THEN 0
-    WHEN lower(interpretation) LIKE '%ingen synlig m-komponent på serumkurvan%'      THEN 0
+    WHEN lower(interpretation) LIKE '%ingen synlig m-komponent%'             THEN 0
     WHEN lower(interpretation) LIKE '%ses ingen m-komponent på serumkurvan%'         THEN 0
-    WHEN lower(interpretation) LIKE '%ingen m-komponent synlig i serum%'             THEN 0
+    WHEN lower(interpretation) LIKE '%ingen m-komponent synlig%'             THEN 0
     WHEN lower(interpretation) LIKE '%varken patientens%synliga på serumkurvan%'     THEN 0
     WHEN lower(interpretation) LIKE '%varken patientens%urskiljbara%'                THEN 0
     WHEN lower(interpretation) LIKE '%ingen säkert synlig m-komponent på serumkurvan%'   THEN 0
@@ -153,11 +153,28 @@ SET auto_classification = CASE
     WHEN lower(interpretation) LIKE '%är idag ej säkert urskilbara på serumelektroferogrammet%' THEN 0
     WHEN lower(interpretation) LIKE '%ingen m-komponent är idag synlig på serumkurvan%' THEN 0
     WHEN lower(interpretation) LIKE '%ingen m-komponent är synlig på serumkurvan%' THEN 0
- 
-    -- =========================================================================
-    -- ALLT ANNAT → klass 5
-    -- =========================================================================
+    WHEN lower(interpretation) LIKE '%ingen m-komponent påvisas på serumkurvan%' THEN 0
+    WHEN lower(interpretation) LIKE '%ingen synlig  m-komponent i serum%' THEN 0
+    WHEN interpretation ILIKE '%polyklonal immunglobulinfördelning%' THEN 0
+    WHEN interpretation ILIKE '%polyklonal fördelning%' THEN 0
+    WHEN interpretation ILIKE '%Idag är ingen M-komponent synlig%' THEN 0
+    WHEN interpretation ILIKE '%Patientens M-komponent kan ej säkert urskiljas på serumkurvan%' THEN 0
+    WHEN interpretation ILIKE '%Ingen synlig M-komponent på både serumkurvan och immunfixation%' THEN 0
+
+
+    WHEN interpretation ILIKE '%Lätt avvikande immunglobulinfördelning%' THEN 2
+    WHEN interpretation ILIKE '%Lätt avvikande Ig-fördelning av oklar signifikans%' THEN 2
+
+    WHEN lower(interpretation) LIKE '%oligoklonal%' THEN 4
+
     ELSE 5
  
 END
 WHERE auto_classification IS NULL;
+
+UPDATE protein_data SET observation_nr = 1000 WHERE observation_nr = 1 AND (
+    interpretation ILIKE '%patient med känd%m-komponent%' OR
+    interpretation ILIKE '%patient med kappa m-komponent%' OR
+    interpretation ILIKE '%patient med lambda m-komponent%' OR
+    interpretation ILIKE '%med tidigare känd%'
+    );

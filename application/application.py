@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib.widgets as widgets
-from functions.analyte import ANALYTES, get_ref
+from   functions.analyte import ANALYTES, get_ref
 import duckdb
 import sys
 
@@ -28,7 +28,7 @@ def choose_username():
 
 
 def show_annotation_gui():
-    con = duckdb.connect('../capillary.db')
+    con = duckdb.connect('application.db')
     usernames = con.execute("SELECT username FROM users").df()['username'].tolist()
     username = choose_username()
     if username is None:
@@ -48,13 +48,13 @@ def show_annotation_gui():
     print(f"Inloggad som: {username}")
 
     rows = con.execute("""
-        WITH nbr_of_annotations(id,freq) AS (
+        WITH nbr_of_annotations(row_id,freq) AS (
             SELECT row_id,count(*) FROM classifications GROUP BY row_id    
         )       
                 
-        SELECT id,value,boundaries,gender,albumin,antitrypsin,orosomukoid,haptoglobin,crp,igg,iga,igm,coalesce(freq,0) AS tot_annotations FROM difficult_curves
-            LEFT JOIN nbr_of_annotations USING (id)
-                    WHERE id NOT IN (SELECT row_id FROM classifications WHERE username = ?)
+        SELECT row_id,value,gender,albumin,antitrypsin,orosomukoid,haptoglobin,crp,igg,iga,igm,coalesce(freq,0) AS tot_annotations FROM difficult_curves
+            LEFT JOIN nbr_of_annotations USING (row_id)
+                    WHERE row_id NOT IN (SELECT row_id FROM classifications WHERE username = ?)
             ORDER BY tot_annotations ASC LIMIT 200;
     """, [username]).df()
     print(f"Antal fall att annotera: {len(rows)}")
@@ -109,7 +109,7 @@ def show_annotation_gui():
         gender = row.get('gender', 'M')
 
         ax_curve.plot(curve[50:300], color='#ea3323', linewidth=1.5)
-        ax_curve.set_title(f"id={row['id']}  ({idx+1} / {len(rows)})")
+        ax_curve.set_title(f"id={row['row_id']}  ({idx+1} / {len(rows)})")
 
         core = ANALYTES[:8]
         table_data, row_colors = [], []
@@ -141,8 +141,8 @@ def show_annotation_gui():
 
         status_text.set_text(f'Inloggad som {username}. Fall {idx+1} av {len(rows)}')
         existing = con.execute(
-            "SELECT classification FROM Classifications WHERE username = ? AND row_id = ?",
-            [username, int(row['id'])]
+            "SELECT classification FROM classifications WHERE username = ? AND row_id = ?",
+            [username, int(row['row_id'])]
         ).fetchone()
 
         label_names = {0: 'Ingen M-komponent', 1: 'Misstänkt M-komponent', 4: 'Oligoklonalt', 6: 'Lätt avvikande fördelning'}
@@ -166,10 +166,10 @@ def show_annotation_gui():
     def annotate(label: int):
         row = rows.iloc[current_idx[0]]
         label_names = {0: 'Ingen M-komponent', 1: 'Misstänkt M-komponent', 4: 'Oligoklonalt', 6: 'Lätt avvikande fördelning'}
-        print(f"id={row['id']} -> {label_names[label]}")
+        print(f"id={row['row_id']} -> {label_names[label]}")
         con.execute(
-            "INSERT OR REPLACE INTO Classifications (username, row_id, classification) VALUES (?,?,?)",
-            [username, int(row['id']), label]
+            "INSERT OR REPLACE INTO classifications (username, row_id, classification) VALUES (?,?,?)",
+            [username, int(row['row_id']), label]
         )
 
         if current_idx[0] < len(rows) - 1:

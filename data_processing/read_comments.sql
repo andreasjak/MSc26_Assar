@@ -12,7 +12,7 @@ CREATE TABLE comment_frequencies (
 );
 
 CREATE TABLE comment_precences AS (
-    SELECT id AS row_id, comment_nr FROM comments c
+    SELECT row_id, comment_nr FROM comments c
     JOIN protein_data p
         ON REPLACE(p.interpretation, ',', '') ILIKE '%' || TRIM(TRAILING '.' FROM c.comment) || '%'
     ORDER BY row_id

@@ -60,7 +60,7 @@ def train_loop(
     save_path,
     epochs=1000,
     patience=5,
-    device='cpu',
+    device='mps',
     autoencoder=False,
 ):
     """
@@ -93,7 +93,8 @@ def train_loop(
                 f"train: {train_loss:.4f} | "
                 f"val: {val_loss:.4f} | "
                 f"acc: {metrics['accuracy']:.2f}% | "
-                f"AUC: {metrics['auc']:.3f}"
+                f"AUC: {metrics['auc']:.3f}  | "
+                f"LR: {optimizer.param_groups[0]['lr']}"
             )
         else:
             print(f"Epoch {t:>3} | train: {train_loss:.4f} | val: {val_loss:.4f}")
@@ -103,6 +104,52 @@ def train_loop(
             no_improve = 0
             torch.save(model.state_dict(), save_path)
             print(f"  -> ny bästa modell sparad till {save_path}")
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"Early stopping efter {t+1} epoker.")
+                break
+
+    print("Klar!")
+
+def train_loop_coral(train_dl, val_dl, model, loss_fn, optimizer, scheduler,
+                     save_path, epochs=1000, patience=5, device='cpu'):
+    best_val_loss = float('inf')
+    no_improve = 0
+
+    for t in range(epochs):
+        model.train()
+        train_loss = 0
+        for X, y, _ in train_dl:
+            X, y = X.to(device), y.to(device).float()
+            optimizer.zero_grad()
+            loss = loss_fn(model(X), y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+        train_loss /= len(train_dl)
+
+        model.eval()
+        val_loss, mae = 0, 0
+        with torch.no_grad():
+            for X, y, _ in val_dl:
+                X, y = X.to(device), y.to(device).float()
+                logits = model(X)
+                val_loss += loss_fn(logits, y).item()
+                pred_severity = torch.sigmoid(logits).sum(dim=1).round()
+                true_severity = y.sum(dim=1)
+                mae += torch.abs(pred_severity - true_severity).mean().item()
+        val_loss /= len(val_dl)
+        mae      /= len(val_dl)
+
+        scheduler.step(val_loss)
+        print(f"Epoch {t:>3} | train: {train_loss:.4f} | val: {val_loss:.4f} | MAE: {mae:.3f} | lr: {optimizer.param_groups[0]['lr']:.6f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            no_improve = 0
+            torch.save(model.state_dict(), save_path)
+            print(f"  -> ny bästa modell sparad")
         else:
             no_improve += 1
             if no_improve >= patience:

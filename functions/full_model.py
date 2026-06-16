@@ -6,18 +6,22 @@ import joblib
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, TensorDataset
 from functions.analyte import ANALYTES, get_ref
-from networks.cnn_network import CNNModel
+from networks.cnn_dilated_convolutions import CNNModel
 import networks.cnn_network as CNN
 import networks.auto_encoder as AE
 from networks.auto_encoder import AutoencoderModel
 from networks.inflammation_network import InflammationModel
 from networks.oligoclonal_network import OligoclonalModel
 from networks.inflammation_network import comment_inflammation
+from networks.comment_108 import Comment108Model
 from functions.other_proteins import comment_albumin
 from functions.other_proteins import comment_haptoglobin
 from functions.other_proteins import comment_immunglobulin
 from functions.free_light_chains import predict_using_free_light_chains
 from functions.free_light_chains import comment_free_light_chains
+from functions.urine import comment_urin
+from functions.other_proteins import comment_antitrypsin
+from functions.other_proteins import comment_add_urine
 
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -45,27 +49,36 @@ def get_autoencoder_model() -> AutoencoderModel:
 
 # ── predict ──────────────────────────────────────────────────────────────────
 
-def predict(df: pd.DataFrame, cnn_suffix: str, ae_suffix: str) -> pd.DataFrame:
+def predict(df: pd.DataFrame,threshold=0.2, proportion = 70) -> pd.DataFrame:
 
     if len(df) == 0:
         raise Exception("Raden saknar nödvändig information.")
-    predictor_function = get_predict_fn(cnn_suffix,ae_suffix)
-    df = predictor_function(df)
-    df = OligoclonalModel().predict(df)
-    df = InflammationModel().predict(df)
+    
 
+    predictor_function = get_predict_fn() # här händer allt
+
+    df = predictor_function(df)
     meta_model = joblib.load('../models/meta_model.pkl')
     df['joint_prob'] = meta_model.predict(
         np.column_stack([df['cnn_probability'], df['encoder_probability']])
     )
     df['prediction'] = (
-        (df['cnn_probability'] > 0.2) | (df['proportion_gamma_region'] > 40)
+        (df['cnn_probability'] > threshold) | (df['proportion_gamma_region'] > proportion)
     ).astype(int)
 
-    df['alarming_free_light_chains'] = df['s_kl_kvot'].apply(
-    lambda x: predict_using_free_light_chains(x) if pd.notna(x) else 0
+    df = predict_using_free_light_chains(df)
+    df['final_prediction'] = df['prediction'].copy()
+    if 'free_light_chain_flag' in df.columns:
+        df.loc[df['free_light_chain_flag'] == 1, 'final_prediction'] = 1
+        df.loc[df['free_light_chain_flag'] == 0, 'final_prediction'] = 0
+
+    mask_uncertain = (df['final_prediction'] == 0) & (
+    (df['comment_108'] >= 0.5) | (df['oligoclonal_probability'] >= 0.5)
     )
 
+    df.loc[mask_uncertain & (df['comment_108'] + 0.1 > df['oligoclonal_probability']), 'final_prediction'] = 2
+    df.loc[mask_uncertain & (df['comment_108'] + 0.1 <= df['oligoclonal_probability']), 'final_prediction'] = 4
+    
     return df
 
     
@@ -73,36 +86,37 @@ def predict(df: pd.DataFrame, cnn_suffix: str, ae_suffix: str) -> pd.DataFrame:
 
 def interpret(row: dict) -> dict:
     row = pd.DataFrame([row])
+    row["orders"] = [[]] 
+    row["orders"] = row["orders"].astype(object)
 
     interpretation = ""
-    if row['final_prediction'][0] == 1:
-        interpretation = "Misstänkt M-komponent. Immunfixation rekommenderas. "
-    else:
-        if row['cnn_probability'][0] > 0.1 and row['cnn_probability'][0] < 0.2 and row['oligoclonal_probability'][0] < 0.75:
-            interpretation += "Lätt avvikande immunglobulinfördelning. M-komponent <1 g/L? Specifik immunisering? "
-        elif row['oligoclonal_probability'][0] >= 0.75:
-            interpretation += f"Tecken på oligoklonal fördelning. P(oligoklonalt) = {100*row['oligoclonal_probability'][0]:.1f} %. "
-        else:
-            interpretation += "Ingen M-komponent påvisas i serum. "
-
     interpretation += comment_albumin(row)
     interpretation += comment_inflammation(row)
     interpretation += comment_haptoglobin(row)
+    interpretation += comment_antitrypsin(row)
     interpretation += comment_immunglobulin(row)
+    interpretation += comment_m_component(row)
     interpretation += comment_free_light_chains(row)
+    interpretation += comment_add_urine(row)
+    interpretation += comment_urin(row)
 
-   
+    
+
+    print(f"P(lätt avvikande)={100*row['comment_108'][0]:.2f}%")
+    print(f"P(oligoklonalt)={100*row['oligoclonal_probability'][0]:.2f}%")
 
     idx = 0
     fig, axes = plt.subplots(2, 2, figsize=(14, 10),
                              gridspec_kw={'height_ratios': [2, 1], 'width_ratios': [3, 1]})
-    ax1, ax2, ax_table = axes[0, 0], axes[1, 0], axes[0, 1]
-    axes[1, 1].axis('off')
+    ax1 = axes[0, 0]
+    ax2 = axes[1, 0]
+    ax_table = axes[0, 1]
+    ax_orders = axes[1, 1]
 
 
 
     plt.suptitle(
-        f"Anomali-detektion (Klass {row.loc[idx,'label']}), id: {row.loc[idx,'id']}. "
+        f"Anomali-detektion (Klass {row.loc[idx,'label']}), id: {row.loc[idx,'row_id']}. "
         f"P(cnn)={row.loc[idx,'cnn_probability']*100:.2f}%, "
         f"P(encoder)={row.loc[idx,'encoder_probability']*100:.2f}%",
         fontsize=11
@@ -126,7 +140,9 @@ def interpret(row: dict) -> dict:
     gender        = row['gender'].iloc[0]
     core_analytes = ANALYTES[:8]
     extra_analytes = [a for a in ANALYTES[8:11] if row[a.col].iloc[0] is not None and pd.notna(row[a.col].iloc[0])]
-    display_analytes = core_analytes + extra_analytes
+    urine_analytes = [a for a in ANALYTES[11:] if row[a.col].iloc[0] is not None and pd.notna(row[a.col].iloc[0])]
+
+    display_analytes = core_analytes + extra_analytes + urine_analytes
     table_data, row_colors = [], []
     
 
@@ -135,14 +151,64 @@ def interpret(row: dict) -> dict:
         low, high  = get_ref(analyte, gender)
         outside    = not (low <= value <= high)
         flag       = " *" if outside else ""
-        table_data.append([f"{value:.1f}{flag}", f"{low}–{high}"])
-        row_colors.append(["#ffcccc", "#ffcccc"] if outside else ['white', 'white'])
+        if analyte.name.lower() in str(row['protein_comments']).lower() and value == 0:
+            table_data.append(["Ej mätbar", f"{low}–{high}"])
+            row_colors.append(["#e5ff00", "#e5ff00"])
+        else:
+            table_data.append([f"{value:.2f}{flag}", f"{low}–{high}"])        
+            row_colors.append(["#ffcccc", "#ffcccc"] if outside else ['white', 'white'])
 
+    ax_table.axis('off')
+    ax_table.set_title('Proteiner', fontsize=10, pad=8)
+
+    orders = row.loc[idx, "orders"]
+
+    ax_orders.axis('off')
+    ax_orders.set_title("Beställda tilläggsanalyser", fontsize=10, pad=8)
+
+    ORDER_NAMES = {
+        "1712": "Urinimmunfix",
+        "0085": "Serumimmunfix",
+        "1713": "Urinimmunfix (konc)"
+    }
+    cellText = [
+    [code, ORDER_NAMES.get(code, "Okänd analys")]
+    for code in orders
+        ]
+    
+
+    if len(orders) > 0:
+        order_table = ax_orders.table(
+        cellText=cellText,
+        colLabels=["Kod", "Analys"],
+        cellLoc="left",
+        loc="center",
+        bbox=[0, 0, 1, 1]
+        )
+
+        order_table.auto_set_font_size(False)
+        order_table.set_fontsize(10)
+        order_table.scale(1, 1.4)
+
+        for (r, c), cell in order_table.get_celld().items():
+            if r == 0:
+                cell.set_facecolor("#dddddd")
+    else:
+        ax_orders.text(
+            0.5, 0.5,
+            "Inga tilläggsbeställningar",
+            ha="center",
+            va="center"
+        )
+
+    # Centrera tabellen vertikalt
     table = ax_table.table(
         cellText=table_data,
         rowLabels=[a.name for a in display_analytes],
         colLabels=['Värde', 'Ref'],
-        loc='center', cellLoc='center'
+        loc='center',
+        cellLoc='center',
+        bbox=[0, 0, 1, 1]  # [x, y, width, height] – fyller hela axeln
     )
     for (row_idx, col_idx), cell in table.get_celld().items():
         if row_idx == 0:
@@ -157,10 +223,8 @@ def interpret(row: dict) -> dict:
     ax_table.set_title('Proteiner', fontsize=10, pad=8)
 
     tolkning_text = (
-        "Maskintolkning: " + interpretation +
-        "\n\nLäkares tolkning: " + row.loc[idx, 'interpretation'] +
-        ". TSE gamma: " + str(row.loc[idx, 'total_squared_error_gamma_region'])
-    )
+        "Maskintolkning:\n" + interpretation +
+        "\n\nLäkares tolkning:\n" + row.loc[idx, 'interpretation']  )
     plt.figtext(0.5, 0.20, tolkning_text, wrap=True,
                 horizontalalignment='center', verticalalignment='top',
                 fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
@@ -187,21 +251,14 @@ def retrain(train_rows, val_rows, model_suffix: str):
     print(f"Träning klar! Modeller sparade med suffix '{model_suffix}'")
 
 
-def get_predict_fn(cnn_suffix: str = None, ae_suffix: str = None):
+def get_predict_fn():
     """
     Returnerar en predict-funktion som använder modeller med givet suffix.
     Om suffix är None används standardmodellerna.
     """
-    cnn_suffix = f'_{cnn_suffix}' if cnn_suffix else ''
-    ae_suffix = f'_{ae_suffix}' if ae_suffix else ''
 
-    cnn = CNNModel(
-        model_path=f'../models/convolution_model{cnn_suffix}.pth',
-        scaler_path='../models/scaler.pkl'
-    )
-    ae = AutoencoderModel(
-        model_path=f'../models/auto_encoder_model{ae_suffix}.pth'
-    )
+    cnn = CNNModel()
+    ae = AutoencoderModel()
 
     def predict_with_models(df: pd.DataFrame) -> pd.DataFrame:
         if len(df) == 0:
@@ -210,14 +267,23 @@ def get_predict_fn(cnn_suffix: str = None, ae_suffix: str = None):
         df = ae.predict(df)
         df = OligoclonalModel().predict(df)
         df = InflammationModel().predict(df)
-        meta_model = joblib.load('../models/meta_model.pkl')
-        df['joint_prob'] = meta_model.predict(
-            np.column_stack([df['cnn_probability'], df['encoder_probability']])
-        )
-        df['prediction'] = (
-            (df['cnn_probability'] > 0.2) | (df['proportion_gamma_region'] > 40)
-        ).astype(int)
+        df = Comment108Model().predict(df)
         return df
 
     return predict_with_models
 
+def comment_m_component(row):
+    interpretation = ''
+    if row['final_prediction'][0] == 1:
+        interpretation += "Misstänkt M-komponent. "
+        current_orders = row.at[0, "orders"]
+        row.at[0, "orders"] = current_orders + ["0085"]
+    elif max(row['comment_108'][0], row['oligoclonal_probability'][0]) >= 0.5:
+        if(row['comment_108'][0] + 0.1 > row['oligoclonal_probability'][0]):
+               interpretation += f"Lätt avvikande immunglobulinfördelning. M-komponent <1 g/L? Specifik immunisering? "
+        else:
+            interpretation += f"Oligoklonal fördelning av immunglobulinerna. "
+    else:
+        interpretation += "Ingen M-komponent påvisas i serum. "
+
+    return interpretation

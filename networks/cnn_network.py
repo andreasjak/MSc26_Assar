@@ -131,7 +131,7 @@ def build_dataloader(rows, batch_sz=512):
     X[:, 300:] = scaler.transform(X[:, 300:])
 
     y = torch.tensor(rows['label'].values, dtype=torch.long)
-    ids = torch.tensor(rows['id'].to_numpy(), dtype=torch.long)
+    ids = torch.tensor(rows['row_id'].to_numpy(), dtype=torch.long)
     X = torch.tensor(X, dtype=torch.float32)
 
     dataset = TensorDataset(X, y, ids)
@@ -169,8 +169,8 @@ def build_dataloaders(train_rows, val_rows, test_rows, batch_sz=512):
 
     X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
 
-    train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['id'].to_numpy())), batch_size=batch_sz, shuffle=True)
-    val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['id'].to_numpy())),   batch_size=batch_sz)
-    test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['id'].to_numpy())),  batch_size=batch_sz)
+    train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
+    val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
+    test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
 
     return train_dl, val_dl, test_dl

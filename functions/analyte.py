@@ -15,22 +15,28 @@ ANALYTES = [
     Analyte('Orosomukoid',  'orosomukoid',  '0055', (0.52, 1.17), (0.52, 1.17)),
     Analyte('Haptoglobin',  'haptoglobin',  '0058', (0.24, 1.90), (0.24, 1.90)),
     Analyte('CRP',          'crp',          '0062', (0.0,  3.0),  (0.0,  3.0)),
-    Analyte('IGG',          'igg',          '0064', (6.7,  14.5), (6.7,  14.5)),
-    Analyte('IGA',          'iga',          '0065', (0.88, 4.5),  (0.88, 4.5)),
-    Analyte('IGM',          'igm',          '0066', (0.27, 2.10), (0.27, 2.10)),
+    Analyte('IgG',          'igg',          '0064', (6.7,  14.5), (6.7,  14.5)),
+    Analyte('IgA',          'iga',          '0065', (0.88, 4.5),  (0.88, 4.5)),
+    Analyte('IgM',          'igm',          '0066', (0.27, 2.10), (0.27, 2.10)),
     Analyte('S-Kappa',      's_kappa',      '1613', (6.7,  22.4),  (6.7,   22.4)),
     Analyte('S-Lambda',     's_lambda',     '1614', (8.3,  27.0),  (8.3,   27.0)),
     Analyte('S-KL-kvot',    's_kl_kvot',    '1615', (0.31,  1.56),  (0.31,   1.56)),
-    Analyte('U-Albumin/krea',    'u_albumin',   '0039', (0.0,  3.0),  (0.0,   3.0)),
-    Analyte('U-IGG/krea',    'u_igg',    '0033', (0.0,  0.8),  (0.0,   0.8)),
-    Analyte('U-Kappa/krea',    'u_kappa',    '0034', (0.0,  0.6),  (0,   0.6)),
-    Analyte('U-Lambda/krea',    'u_lambda',    '0035', (0.0,  0.6),  (0.0,   0.6)),
-    Analyte('U-HC/krea',    'u_hc',    '0036', (0.0,  1.6),  (0.0,   1.6)),
+    Analyte('U-Albumin/krea',    'u_albumin_krea',   '0039', (0.0,  3.0),  (0.0,   3.0)),
+    Analyte('U-IGG/krea',    'u_igg_krea',    '0033', (0.0,  0.8),  (0.0,   0.8)),
+    Analyte('U-Kappa/krea',    'u_kappa_krea',    '0034', (0.0,  0.6),  (0,   0.6)),
+    Analyte('U-Lambda/krea',    'u_lambda_krea',    '0035', (0.0,  0.6),  (0.0,   0.6)),
+    Analyte('U-HC/krea',    'u_hc_krea',    '0036', (0.0,  1.6),  (0.0,   1.6)),
+    Analyte('U-Kappa', 'u_kappa','1175',(0.0,8.0),(0.0,8.0)),
+    Analyte('U-Lambda', 'u_lambda','2175',(0.0,5.0),(0.0,5.0)),
+    Analyte('Kreatinin','u_kreatinin','2418',(0.0,float("inf")),(0.0,float("inf")))
 ]
 
 # Härleds automatiskt från ANALYTES
 ANALYSIS_MAP = {a.analysis_nr: a.col for a in ANALYTES}
 PROTEIN_LABELS = [a.name for a in ANALYTES]
+
+def get_all_analyte_ids() -> list[str]:
+    return [a.analysis_nr for a in ANALYTES]
 
 def get_analyte(name: str) -> Analyte:
     for analyte in ANALYTES:

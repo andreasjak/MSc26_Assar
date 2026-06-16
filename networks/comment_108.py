@@ -1,3 +1,5 @@
+from matplotlib import pyplot as plt
+from sklearn.metrics import auc, classification_report, confusion_matrix, roc_curve
 from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
@@ -64,9 +66,9 @@ class CNNNetwork(nn.Module):
         return self.classifier(combined)
 
 
-class CNNModel:
+class Comment108Model:
     def __init__(self,
-                 model_path='../models/convolution_dilated_version.pth',
+                 model_path='../models/comment_108.pth',
                  scaler_path='../models/scaler.pkl'):
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
@@ -75,7 +77,7 @@ class CNNModel:
         self.model.to(device)
 
     def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
-        """Beräknar P(M-komponent) och skriver till df['cnn_probability']."""
+        """Beräknar P(M-komponent) och skriver till df['comment_108']."""
         X = self._build_X(df)
         dataloader = DataLoader(TensorDataset(torch.tensor(X)), batch_size=512)
         self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
@@ -88,13 +90,11 @@ class CNNModel:
                 probs = torch.softmax(logits, dim=1)[:, 1]
                 all_probs.append(probs.cpu().numpy())
 
-        df['cnn_probability'] = np.concatenate(all_probs)
-        df['prediction'] = (df['cnn_probability'] >0.2).astype(int)
+        df['comment_108'] = np.concatenate(all_probs)
         return df
     
     def _build_X(self, df: pd.DataFrame) -> np.ndarray:
         protein_cols = [a.col for a in ANALYTES[:8]]
-     
         X = np.concatenate([
             np.array(df['value'].tolist(),      dtype=np.float32),  # (n, 300)
             np.array(df['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
@@ -108,7 +108,7 @@ class CNNModel:
         """Tränar om modellen och sparar bästa vikterna."""
         pos_weight = torch.tensor([1.0, 6.0], dtype=torch.float32).to(device)
         loss_fn   = nn.CrossEntropyLoss(weight=pos_weight)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 mode='min',
@@ -127,3 +127,52 @@ class CNNModel:
             autoencoder=False
         )
         self.model.load_state_dict(torch.load(save_path, weights_only=True))
+
+    def evaluate(self, df,threshold=0.7):
+        df = self.predict(df)
+        all_probs  = np.array(df['comment_108'])
+        all_labels = np.array(df['label'])
+        all_preds = (all_probs >= threshold).astype(int)
+        print(f"Totala mängd datapunkter: {len(all_probs)}")
+
+        print(classification_report(all_labels, all_preds, target_names=['Negativ', 'Positiv']))
+        print(confusion_matrix(all_labels, all_preds))
+
+        # ROC-kurva
+        fpr, tpr, thresholds = roc_curve(all_labels, all_probs)
+
+        # AUC
+        roc_auc = auc(fpr, tpr)
+
+        print("AUC:", roc_auc)
+
+        fp = sum((all_labels == 0) & (all_preds == 1))
+        fn = sum((all_labels == 1) & (all_preds == 0))
+        tn = sum((all_labels == 0) & (all_preds == 0))
+        tp = sum((all_labels == 1) & (all_preds == 1))
+
+
+        fn_rate = fn / sum(all_labels == 1)
+        fp_rate = fp / sum(all_labels == 0)
+        accuracy = sum(all_preds == all_labels) / len(all_preds)
+        specificity = tn / (tn + fp)
+        sensitivity = tp / (tp + fn)
+
+        print(f"Accuracy:  {100*accuracy:.2f}%")
+        print(f"FN-rate:   {100*fn_rate:.2f}%  (farliga missade fall)")
+        print(f"FP-rate:   {100*fp_rate:.2f}%  (onödiga larm)")
+        print(f"Sensitivitet:   {100*sensitivity:.2f}%  (Sannolikhet att upptäcka ett positivt fall)")
+        print(f"Specificitet:   {100*specificity:.2f}%  (Sannolikhet att korrekt klassificera ett negativt fall negativt)")
+        print(f"AUC: {roc_auc:.4f}")
+
+        # Rita kurvan
+        plt.plot(fpr, tpr, label=f"AUC = {roc_auc:.3f}")
+        plt.plot([0,1], [0,1], linestyle="--")
+
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve")
+        plt.legend()
+
+        plt.show()
+        return df
