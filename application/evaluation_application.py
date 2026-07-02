@@ -50,7 +50,7 @@ def show_annotation_gui():
     print(f"Inloggad som: {username}")
 
     rows = con.execute("""
-        SELECT * FROM difficult_cases LEFT JOIN classifications USING(row_id) WHERE (username IS NULL or username != ?) AND classification IS NULL
+        SELECT * FROM difficult_cases WHERE row_id NOT IN (SELECT row_id FROM classifications WHERE username = ?)
     """,[username]).df()
     print(f"Antal fall att annotera: {len(rows)}")
 
