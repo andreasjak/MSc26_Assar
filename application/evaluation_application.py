@@ -193,6 +193,19 @@ def show_annotation_gui():
         if event.key == '4': annotate(2)
         if event.key == 'left':  go_prev(None)
         if event.key == 'right': go_next(None)
+
+    def on_mouse_move(event):
+        
+        if event.inaxes == ax_curve and event.xdata is not None and current_curve[0] is not None:
+            curve = current_curve[0]
+            global x
+            global y
+            x = int(event.xdata)
+            y = int(event.ydata)
+            
+            redraw_zoom(curve)
+
+    fig.canvas.mpl_connect('motion_notify_event', on_mouse_move)
         
     fig.canvas.mpl_connect('key_press_event', on_key)
 
