@@ -106,7 +106,6 @@ def analyze_patient():
         # 6. Packa ihop det slimmade svaret till klienten
         result = {
             "status": "success",
-            "id": int(df_predicted.loc[0, "row_id"]) if "row_id" in df_predicted.columns else None,
             "predictions": {
                 "cnn_probability": float(df_predicted.loc[0, "cnn_probability"]),
                 "encoder_probability": float(df_predicted.loc[0, "encoder_probability"]),
@@ -114,8 +113,8 @@ def analyze_patient():
                 "comment_108_probability": float(df_predicted.loc[0, "comment_108"]),
                 "final_prediction": int(df_predicted.loc[0, "final_prediction"])
             },
-            "utlatande": text_output,
-            "bestalda_analyser": df_predicted.loc[0, "orders"]
+            "interpretation": text_output,
+            "additional_analysis": df_predicted.loc[0, "orders"]
         }
         
         # ensure_ascii=False behövs för att svenska tecken (å, ä, ö) ska skickas rätt

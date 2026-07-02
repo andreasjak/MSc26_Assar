@@ -14,7 +14,7 @@ def find_proportions(row):
     values = row['value']
     peaks, properties = find_peaks(values,prominence=6,distance=10)
     top6_idx = np.argsort(properties['prominences'])[-6:]
-    peaks = np.sort(peaks[top6_idx])  # sortera i höjd-ordning
+    peaks = np.sort(peaks[top6_idx]) 
     widths, heights, left_ips, right_ips = peak_widths(values, peaks, rel_height=0.8)
     left_ips = left_ips.astype(int)
     right_ips = right_ips.astype(int)

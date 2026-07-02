@@ -176,5 +176,8 @@ UPDATE protein_data SET observation_nr = 1000 WHERE observation_nr = 1 AND (
     interpretation ILIKE '%patient med känd%m-komponent%' OR
     interpretation ILIKE '%patient med kappa m-komponent%' OR
     interpretation ILIKE '%patient med lambda m-komponent%' OR
-    interpretation ILIKE '%med tidigare känd%'
+    interpretation ILIKE '%med tidigare känd%' OR
+    (interpretation ILIKE '%patientens ig%' AND interpretation NOT ILIKE '%nyupptäckt') OR
+    interpretation ILIKE '%fortfarande%' OR
+    interpretation ILIKE '%tidigare%'
     );

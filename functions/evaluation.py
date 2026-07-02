@@ -57,11 +57,21 @@ def evaluate(df: pd.DataFrame) -> pd.DataFrame:
     all_labels = np.array(df['label'])
     if 'final_prediction' in df.columns:
         final_preds = np.array(df['final_prediction'])
+        cm = confusion_matrix(df['label'], df['final_prediction'])
     else:
         final_preds = np.array(df['prediction'])
-
+        cm = confusion_matrix(df['label'], df['prediction'])
+    display_labels = ['Negativ', 'Positiv']
     print(classification_report(all_labels, final_preds, target_names=['Negativ', 'Positiv']))
     print(confusion_matrix(all_labels, final_preds))
+    
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=display_labels)
+
+    _, ax = plt.subplots(figsize=(8, 6))
+    disp.plot(ax=ax, colorbar=False, cmap='Blues')
+    ax.set_title('Konfusionsmatris')
+    plt.tight_layout()
+    plt.show()
 
     if 'free_light_chain_flag' in df.columns:
         new_positives = ((df['prediction'] == 0) & (df['free_light_chain_flag'] == 1)).sum()
@@ -113,3 +123,57 @@ def evaluate(df: pd.DataFrame) -> pd.DataFrame:
 
 
     return df
+
+def generate_latex_table(df):
+    tn = df['tn'].mean()
+    tn_std = df['tn'].std()
+    fp = df['fp'].mean()
+    fp_std = df['fp'].std()
+    fn = df['fn'].mean()
+    fn_std = df['fn'].std()
+    tp = df['tp'].mean()
+    tp_std = df['tp'].std()
+    acc = df['val_accuracy'].mean()
+    acc_std = df['val_accuracy'].std()
+    auc = df['val_auc'].mean()
+    auc_std = df['val_auc'].std()
+    sens = df['val_sens'].mean()
+    sens_std = df['val_sens'].std()
+    spec = df['val_spec'].mean()
+    spec_std = df['val_spec'].std()
+    loss = df['val_loss'].mean()
+    loss_std = df['val_loss'].std()
+    return r"""
+\begin{table}[H]
+\begin{center}
+\begin{minipage}{0.45\textwidth}
+    \centering
+    \begin{tabular}{cc|cc}
+      \toprule
+      & & \multicolumn{2}{c}{Predicted} \\
+      & & Neg. & Pos. \\
+      \midrule
+      \multirow{2}{*}{\rotatebox[origin=c]{90}{Actual}}
+      & Neg. & $""" + f"{tn:.0f} \\pm {tn_std:.0f}" + r"""$ & $""" + f"{fp:.0f} \\pm {fp_std:.0f}" + r"""$ \\[0.1em]
+      & Pos. & $""" + f"{fn:.0f} \\pm {fn_std:.0f}" + r"""$ & $""" + f"{tp:.0f} \\pm {tp_std:.0f}" + r"""$ \\
+      \addlinespace[0.6em]
+      \bottomrule
+    \end{tabular}
+\end{minipage}%
+\begin{minipage}{0.45\textwidth}
+    \centering
+    \begin{tabular}{lr}
+      \toprule
+      Accuracy    & $""" + f"{acc:.2f} \\pm {acc_std:.2f}" + r"""$ \% \\
+      AUC         & $""" + f"{auc:.4f} \\pm {auc_std:.4f}" + r"""$ \\
+      Sensitivity & $""" + f"{sens:.4f} \\pm {sens_std:.4f}" + r"""$ \\
+      Specificity & $""" + f"{spec:.4f} \\pm {spec_std:.4f}" + r"""$ \\
+      Avg. Val. loss & $""" + f"{loss:.4f} \\pm {loss_std:.4f}" + r"""$ \\
+      \bottomrule
+    \end{tabular}
+\end{minipage}
+\end{center}
+\caption{""" + "Caption"  + r"""}
+\label{""" + "label" + r"""}
+\end{table}
+"""

@@ -144,6 +144,7 @@ def show_annotation_gui():
     def change_observation_nr(e):
         row = rows.iloc[current_idx[0]]
         con.execute("UPDATE protein_data SET observation_nr = 1000 WHERE row_id = (?)", [int(row['row_id'])] )
+        con.execute("INSERT OR REPLACE INTO classifications (username, row_id, classification) VALUES (?,?,?)", [username, int(row['row_id'],8)])
         print(f"id={row['row_id']} -> Ändrar observationsnr")
         if current_idx[0] < len(rows) - 1:
             current_idx[0] += 1

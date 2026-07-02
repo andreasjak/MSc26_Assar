@@ -162,9 +162,9 @@ class InflammationModel:
         print(f"Inom ±2 grad: {off2:.1f}%")
         print(f"The bias is: {np.mean(all_preds - all_true)}")
 
-        for i in range(10):
+        for i in range(9):
             no_predicted = sum(np.abs(all_preds - i) < 1)
-            true_amount = sum(np.abs(all_true - i < 1))
+            true_amount = sum(np.abs(all_true - i) < 1)
             print(f"inflammation level: {i} | predicted amount within 1 unit: {no_predicted} | true amount within 1 unit: {true_amount}")
 
         

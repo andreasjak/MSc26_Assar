@@ -41,11 +41,20 @@ def validate_epoch(dataloader, model, loss_fn, device, autoencoder=False):
                 probs = torch.softmax(pred, dim=1)[:, 1]
                 all_probs.extend(probs.cpu().numpy())
                 all_targets.extend(y.cpu().numpy().astype(int))
-    test_loss /= num_batches
+    test_loss = test_loss / num_batches
     if not autoencoder:
-        correct /= size
+        correct = correct / size
+        all_preds = (np.array(all_probs) >= 0.5).astype(int)
+        all_targets = np.array(all_targets)
+        fp = sum((all_preds == 1) & (all_targets == 0))
+        fn = sum((all_preds == 0) & (all_targets == 1))
+        tn = sum((all_preds == 0) & (all_targets == 0))
+        tp = sum((all_preds == 1) & (all_targets == 1))
+
+        specificity = tn / (tn + fp)
+        sensitivity = tp / (tp + fn)
         auc = roc_auc_score(all_targets, all_probs)
-        return ({"accuracy": 100 * correct,"auc": auc}, test_loss)
+        return ({"accuracy": 100 * correct,"auc": auc, "specificity": specificity, "sensitivity": sensitivity, "tn": tn, "fp": fp, "fn": fn, "tp": tp},test_loss)
 
     return (None,test_loss)
 
@@ -79,13 +88,22 @@ def train_loop(
         device:      'cpu', 'cuda', 'mps' etc
         autoencoder: True om target = input (rekonstruktion)
     """
-    best_val_loss = float('inf')
     no_improve = 0
+    metrics,val_loss = validate_epoch(val_dl,model,loss_fn,device,autoencoder)
+
+    best_auc = metrics['auc']
+    best_val_loss = val_loss
 
     for t in range(epochs):
         train_loss = train_epoch(train_dl, model, loss_fn, optimizer, device, autoencoder)
         metrics,val_loss   = validate_epoch(val_dl, model, loss_fn, device, autoencoder)
-        scheduler.step(val_loss)
+        scheduler.step(train_loss)
+        auc = metrics['auc']
+
+        if auc > best_auc:
+            torch.save(model.state_dict(), save_path)
+            print(f"  -> ny bästa modell sparad till {save_path}")
+            best_auc = auc
 
         if not autoencoder:
             print(
@@ -102,8 +120,7 @@ def train_loop(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             no_improve = 0
-            torch.save(model.state_dict(), save_path)
-            print(f"  -> ny bästa modell sparad till {save_path}")
+            
         else:
             no_improve += 1
             if no_improve >= patience:
