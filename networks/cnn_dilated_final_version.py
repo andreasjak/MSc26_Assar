@@ -1,4 +1,3 @@
-from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 import torch
 import torch.nn as nn
@@ -8,7 +7,8 @@ import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
 from functions.analyte import ANALYTES
 from functions.training import train_loop
-from networks.cnn_network import build_dataloaders
+from sklearn.model_selection import StratifiedKFold
+import copy
 
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -18,24 +18,47 @@ class CNNNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=7, padding=3),
+            nn.Conv1d(1, 16, kernel_size=3, padding=1, dilation=1),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.MaxPool1d(2),
-            nn.Conv1d(32, 64, kernel_size=5, padding=2),
+
+            nn.Conv1d(16, 16, kernel_size=5, padding=2, dilation=1),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.MaxPool1d(2),
-            nn.Conv1d(64, 128, kernel_size=3, padding=1),
+
+            nn.Conv1d(16, 16, kernel_size=7, padding=3, dilation=1),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+
+            nn.Conv1d(16, 16, kernel_size=7, padding=6, dilation=2),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+
+            nn.Conv1d(16, 16, kernel_size=7, padding=9, dilation=3),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+
+            nn.Conv1d(16, 16, kernel_size=9, padding=8, dilation=2),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+
+            nn.Conv1d(16, 16, kernel_size=9, padding=12, dilation=3),
+            nn.BatchNorm1d(16),
             nn.ReLU()
         )
+
+
+        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
         self.tabular = nn.Sequential(
             nn.Linear(26, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU()
         )
-        # avg+max ger 256, tabular ger 32
+
+        # Gemensam klassificerare – CNN-features (256) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(256 + 32, 64),
+            nn.Linear(300*16 + 32, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
@@ -45,25 +68,26 @@ class CNNNetwork(nn.Module):
         curve   = x[:, :300].unsqueeze(1)
         tabular = x[:, 300:]
 
-        curve           = self.features(curve)
-        avg_pool        = torch.mean(curve, dim=2)
-        max_pool        = torch.max(curve, dim=2).values
-        curve_features  = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        tabular_features = self.tabular(tabular)                   # (n, 32)
+        curve_features   = torch.flatten(self.features(curve), 1)  
+        tabular_features = self.tabular(tabular)                          
 
-        combined = torch.cat([curve_features, tabular_features], dim=1)
+        combined = torch.cat([curve_features, tabular_features], dim=1)    
         return self.classifier(combined)
 
 
 class CNNModel:
     def __init__(self,
-                 model_path='../models/convolution_model_avg_and_max_pool.pth',
+                 model_path='../models/cnn_final_dilation.pth',
                  scaler_path='../models/scaler.pkl'):
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
+        self.name = 'cnn_dilation'
         self.scaler = joblib.load(scaler_path)
+        self.model.to(device)
+        total_params = sum(p.numel() for p in self.model.parameters())
+        print(f"Total parameters: {total_params:,}")
 
-    def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
+    def predict(self, df: pd.DataFrame, model_path=None,threshold=0.2) -> pd.DataFrame:
         """Beräknar P(M-komponent) och skriver till df['cnn_probability']."""
         X = self._build_X(df)
         dataloader = DataLoader(TensorDataset(torch.tensor(X)), batch_size=512)
@@ -78,10 +102,68 @@ class CNNModel:
                 all_probs.append(probs.cpu().numpy())
 
         df['cnn_probability'] = np.concatenate(all_probs)
+        df['prediction'] = (df['cnn_probability'] >threshold).astype(int)
         return df
+    
+    def reset_weights(self):
+        self.model = CNNNetwork().to(device)
+
+    def predict_dl(self, val_dl) -> pd.DataFrame:
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        self.model.eval()
+        all_probs = []
+        df = pd.DataFrame()
+        with torch.no_grad():
+            for batch in val_dl:
+                inputs = batch[0].to(device)
+                logits = self.model(inputs)
+                probs = torch.softmax(logits, dim=1)[:, 1]
+                all_probs.append(probs.cpu().numpy())
+
+        df['probability'] = np.concatenate(all_probs)
+        df['prediction'] = (df['probability'] >=0.5).astype(int)
+        return df
+
+    def build_dataloaders(self,train_rows, val_rows, test_rows, batch_sz=512):
+        protein_cols = [a.col for a in ANALYTES[:8]]
+        train_rows = train_rows.dropna(subset=protein_cols)
+        val_rows = val_rows.dropna(subset=protein_cols)
+        test_rows = test_rows.dropna(subset=protein_cols)
+
+        def build_X(rows):
+            return np.concatenate([
+                np.array(rows['value'].tolist(),      dtype=np.float32),  # (n, 300)
+                np.array(rows['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
+                np.array(rows['boundaries'].tolist(), dtype=np.float32),  # (n, 12)
+                np.array(rows[protein_cols].values,   dtype=np.float32),  # (n, 8)
+            ], axis=1)
+
+        X_train = build_X(train_rows)
+        X_val   = build_X(val_rows)
+        X_test  = build_X(test_rows)
+
+        # Skala bara features efter index 300, fit bara på träning
+        scaler = StandardScaler()
+        X_train[:, :] = scaler.fit_transform(X_train[:, :])
+        X_val[:, :]   = scaler.transform(X_val[:, :])
+        X_test[:, :]  = scaler.transform(X_test[:, :])
+        joblib.dump(scaler, '../models/scaler.pkl')
+
+        y_train = torch.tensor(np.array(train_rows['label'].values, dtype=np.int64))
+        y_val   = torch.tensor(np.array(val_rows['label'].values,   dtype=np.int64))
+        y_test  = torch.tensor(np.array(test_rows['label'].values,  dtype=np.int64))
+
+        X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
+
+        train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
+        val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
+        test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
+
+        return train_dl, val_dl, test_dl
     
     def _build_X(self, df: pd.DataFrame) -> np.ndarray:
         protein_cols = [a.col for a in ANALYTES[:8]]
+     
         X = np.concatenate([
             np.array(df['value'].tolist(),      dtype=np.float32),  # (n, 300)
             np.array(df['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
@@ -120,7 +202,7 @@ class CNNModel:
             fold_val_df = train_df.iloc[val_idx]
             
             # Bygg dataloaders
-            fold_train_dl, fold_val_dl, _ = build_dataloaders(fold_train_df, fold_val_df, fold_val_df)
+            fold_train_dl, fold_val_dl, _ = self.build_dataloaders(fold_train_df, fold_val_df, fold_val_df)
             
             
             # Definiera unikt filnamn för den bästa modellen i denna fold
@@ -167,7 +249,13 @@ class CNNModel:
                 'train_loss': train_loss,
                 'val_loss': val_loss,
                 'val_accuracy': metrics['accuracy'],
-                'val_auc': metrics['auc']
+                'val_auc': metrics['auc'],
+                'val_spec': metrics['specificity'],
+                'val_sens': metrics['sensitivity'],
+                'tn': metrics['tn'],
+                'fp': metrics['fp'],
+                'fn': metrics['fn'],
+                'tp': metrics['tp']
             }
             kfold_history.append(fold_results)
             
@@ -177,7 +265,7 @@ class CNNModel:
         df_metrics = pd.DataFrame(kfold_history)
         
         # Spara till CSV-fil
-        csv_save_path = '../models/cnn_maxpooling_kfold_metrics.csv'
+        csv_save_path = '../models/cnn_final_dilation_kfold_metrics.csv'
         df_metrics.to_csv(csv_save_path, index=False)
         
         print("\n" + "="*50)
@@ -185,11 +273,19 @@ class CNNModel:
         print("="*50)
         print(df_metrics.to_string(index=False))
         print("-"*50)
+        print(f"Genomsnittlig Val accuracy:  {df_metrics['val_accuracy'].mean():.4f} (± {df_metrics['val_accuracy'].std():.4f})")
         print(f"Genomsnittlig Val AUC:  {df_metrics['val_auc'].mean():.4f} (± {df_metrics['val_auc'].std():.4f})")
         print(f"Genomsnittlig Val Loss: {df_metrics['val_loss'].mean():.4f} (± {df_metrics['val_loss'].std():.4f})")
+        print(f"Genomsnittlig Val specificity: {100*df_metrics['val_spec'].mean():.4f} (± {100*df_metrics['val_spec'].std():.4f})")
+        print(f"Genomsnittlig Val sensitivity: {100*df_metrics['val_sens'].mean():.4f} (± {100*df_metrics['val_sens'].std():.4f})")
+        print(f"Genomsnittlig Val tn: {df_metrics['tn'].mean():.2f} (± {df_metrics['tn'].std():.2f})")
+        print(f"Genomsnittlig Val fp: {df_metrics['fp'].mean():.2f} (± {df_metrics['fp'].std():.2f})")
+        print(f"Genomsnittlig Val fn: {df_metrics['fn'].mean():.2f} (± {df_metrics['fn'].std():.2f})")
+        print(f"Genomsnittlig Val tp: {df_metrics['tp'].mean():.2f} (± {df_metrics['tp'].std():.2f})")
         print("="*50)
         
         return df_metrics
+
 
     def retrain(self, train_dl, val_dl, epochs=10000, patience=5,model_path=None):
         """Tränar om modellen och sparar bästa vikterna."""

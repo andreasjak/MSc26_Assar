@@ -7,4 +7,6 @@ capillary.db.wal
 backup.csv
 teori
 models/
-
+results/
+*.pyc
+functions/*.pyc

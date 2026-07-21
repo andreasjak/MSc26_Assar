@@ -44,6 +44,7 @@ class NeuralModel:
         self.model = NeuralNetwork().to(device)
         self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
         self.model.to(device)
+        self.name = 'feed_forward_basic'
         total_params = sum(p.numel() for p in self.model.parameters())
         print(f"Total parameters: {total_params:,}")
 
@@ -55,6 +56,50 @@ class NeuralModel:
         all_probs = []
         with torch.no_grad():
             for batch in dataloader:
+                inputs = batch[0].to(device)
+                logits = self.model(inputs)
+                probs = torch.softmax(logits, dim=1)[:, 1]
+                all_probs.append(probs.cpu().numpy())
+
+        df['probability'] = np.concatenate(all_probs)
+        df['prediction'] = (df['probability'] >=0.5).astype(int)
+        return df
+    
+    def build_dataloaders(self,train_rows, val_rows, test_rows, batch_sz=512):
+
+        def build_X(rows):
+            return np.concatenate([
+                np.array(rows['value'].tolist(),      dtype=np.float32),  # (n, 300)
+            ], axis=1)
+
+        X_train = build_X(train_rows)
+        X_val   = build_X(val_rows)
+        X_test  = build_X(test_rows)
+
+        scaler = StandardScaler()
+        X_train[:,:] = scaler.fit_transform(X_train[:, :])
+        X_val[:, :]   = scaler.transform(X_val[:, :])
+        X_test[:, :]  = scaler.transform(X_test[:, :])
+
+        y_train = torch.tensor(np.array(train_rows['label'].values, dtype=np.int64))
+        y_val   = torch.tensor(np.array(val_rows['label'].values,   dtype=np.int64))
+        y_test  = torch.tensor(np.array(test_rows['label'].values,  dtype=np.int64))
+
+        X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
+
+        train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
+        val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
+        test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
+
+        return train_dl, val_dl, test_dl
+    
+    def predict_dl(self, val_dl) -> pd.DataFrame:
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        self.model.eval()
+        all_probs = []
+        df = pd.DataFrame()
+        with torch.no_grad():
+            for batch in val_dl:
                 inputs = batch[0].to(device)
                 logits = self.model(inputs)
                 probs = torch.softmax(logits, dim=1)[:, 1]
@@ -102,7 +147,7 @@ class NeuralModel:
             fold_val_df = train_df.iloc[val_idx]
             
             # Bygg dataloaders
-            fold_train_dl, fold_val_dl, _ = build_dataloaders(fold_train_df, fold_val_df, fold_val_df)
+            fold_train_dl, fold_val_dl, _ = self.build_dataloaders(fold_train_df, fold_val_df, fold_val_df)
             
             
             # Definiera unikt filnamn för den bästa modellen i denna fold
@@ -212,25 +257,3 @@ class NeuralModel:
         )
         self.model.load_state_dict(torch.load(save_path, weights_only=True))
 
-def build_dataloaders(train_rows, val_rows, test_rows, batch_sz=512):
-
-        def build_X(rows):
-            return np.concatenate([
-                np.array(rows['value'].tolist(),      dtype=np.float32),  # (n, 300)
-            ], axis=1)
-
-        X_train = build_X(train_rows)
-        X_val   = build_X(val_rows)
-        X_test  = build_X(test_rows)
-
-        y_train = torch.tensor(np.array(train_rows['label'].values, dtype=np.int64))
-        y_val   = torch.tensor(np.array(val_rows['label'].values,   dtype=np.int64))
-        y_test  = torch.tensor(np.array(test_rows['label'].values,  dtype=np.int64))
-
-        X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
-
-        train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
-        val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
-        test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
-
-        return train_dl, val_dl, test_dl

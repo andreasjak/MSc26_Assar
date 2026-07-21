@@ -24,7 +24,7 @@ def choose_username():
 
 
 def show_annotation_gui():
-    con = duckdb.connect('capillary.db')
+    con = duckdb.connect('../capillary.db')
     usernames = con.execute("SELECT username FROM users").df()['username'].tolist()
     username = choose_username()
     if username is None:

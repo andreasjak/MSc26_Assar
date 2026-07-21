@@ -1,13 +1,10 @@
 import torch
-import torch.nn as nn
 import numpy as np
 import pandas as pd
 import joblib
 from matplotlib import pyplot as plt
-from torch.utils.data import DataLoader, TensorDataset
 from functions.analyte import ANALYTES, get_ref
-from networks.cnn_dilated_convolutions import CNNModel
-import networks.cnn_network as CNN
+from networks.cnn_deep import CNNModel
 import networks.auto_encoder as AE
 from networks.auto_encoder import AutoencoderModel
 from networks.inflammation_network import InflammationModel
@@ -29,6 +26,9 @@ device = torch.accelerator.current_accelerator().type if torch.accelerator.is_av
 # Laddas en gång vid import
 _cnn_model         = None
 _autoencoder_model = None
+_comment_108_model = None
+_oligoclonal_model = None
+_inflammation_model = None
 
 
 def get_cnn_model() -> CNNModel:
@@ -44,6 +44,24 @@ def get_autoencoder_model() -> AutoencoderModel:
         _autoencoder_model = AutoencoderModel()
     return _autoencoder_model
 
+def get_comment_108_model() -> Comment108Model:
+    global _comment_108_model
+    if _comment_108_model is None:
+        _comment_108_model = Comment108Model()
+    return _comment_108_model
+
+def get_oligoclonal_model() -> OligoclonalModel:
+    global _oligoclonal_model
+    if _oligoclonal_model is None:
+        _oligoclonal_model = OligoclonalModel()
+    return _oligoclonal_model
+
+def get_inflammation_model() -> InflammationModel:
+    global _inflammation_model
+    if _inflammation_model is None:
+        _inflammation_model = InflammationModel()
+    return _inflammation_model
+
 
 
 
@@ -55,13 +73,13 @@ def predict(df: pd.DataFrame,threshold=0.2, proportion = 70) -> pd.DataFrame:
         raise Exception("Raden saknar nödvändig information.")
     
 
-    predictor_function = get_predict_fn() # här händer allt
+    df = get_cnn_model().predict(df)
+    df = get_autoencoder_model().predict(df)
+    df = get_oligoclonal_model().predict(df)
+    df = get_inflammation_model().predict(df)
+    df = get_comment_108_model().predict(df)
 
-    df = predictor_function(df)
-    meta_model = joblib.load('../models/meta_model.pkl')
-    df['joint_prob'] = meta_model.predict(
-        np.column_stack([df['cnn_probability'], df['encoder_probability']])
-    )
+ 
     df['prediction'] = (
         (df['cnn_probability'] > threshold) | (df['proportion_gamma_region'] > proportion)
     ).astype(int)
@@ -232,45 +250,6 @@ def interpret(row: dict) -> dict:
 
     return row.iloc[0].to_dict()
 
-def retrain(train_rows, val_rows, model_suffix: str):
-    cnn_path = f'../models/convolution_model_{model_suffix}.pth'
-    ae_path  = f'../models/auto_encoder_model_{model_suffix}.pth'
-    scaler_path = f'../models/scaler.pkl'
-
-    cnn = CNNModel(model_path=cnn_path, scaler_path=scaler_path)
-    ae = AutoencoderModel(model_path=ae_path)
-    cnn_train_dl, cnn_val_dl, _ = CNN.build_dataloaders(train_rows, val_rows, val_rows)
-    ae_train_dl,  ae_val_dl,  _ = AE.build_dataloaders(train_rows, val_rows, val_rows)
-
-    print("Beginning re-training of the CNN-model!\n")
-    cnn.retrain(cnn_train_dl, cnn_val_dl, model_path=cnn_path,patience=10)
-
-    print("Beginning re-training of the AE-model!\n")
-    ae.retrain(ae_train_dl, ae_val_dl, model_path=ae_path,patience=10)
-
-    print(f"Träning klar! Modeller sparade med suffix '{model_suffix}'")
-
-
-def get_predict_fn():
-    """
-    Returnerar en predict-funktion som använder modeller med givet suffix.
-    Om suffix är None används standardmodellerna.
-    """
-
-    cnn = CNNModel()
-    ae = AutoencoderModel()
-
-    def predict_with_models(df: pd.DataFrame) -> pd.DataFrame:
-        if len(df) == 0:
-            raise Exception("Raden saknar nödvändig information.")
-        df = cnn.predict(df)
-        df = ae.predict(df)
-        df = OligoclonalModel().predict(df)
-        df = InflammationModel().predict(df)
-        df = Comment108Model().predict(df)
-        return df
-
-    return predict_with_models
 
 def comment_m_component(row):
     interpretation = ''

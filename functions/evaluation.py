@@ -51,16 +51,20 @@ def evaluate_all_classes(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def evaluate(df: pd.DataFrame) -> pd.DataFrame:
+def evaluate(df: pd.DataFrame,threshold=0.5) -> pd.DataFrame:
 
     all_probs  = np.array(df['cnn_probability'])
     all_labels = np.array(df['label'])
+    if 'prediction' not in df.columns:
+        df['prediction'] = (df['cnn_probability'] >= threshold).astype(int)
     if 'final_prediction' in df.columns:
         final_preds = np.array(df['final_prediction'])
         cm = confusion_matrix(df['label'], df['final_prediction'])
     else:
         final_preds = np.array(df['prediction'])
         cm = confusion_matrix(df['label'], df['prediction'])
+    print(np.unique(all_labels))
+    print(np.unique(final_preds))
     display_labels = ['Negativ', 'Positiv']
     print(classification_report(all_labels, final_preds, target_names=['Negativ', 'Positiv']))
     print(confusion_matrix(all_labels, final_preds))

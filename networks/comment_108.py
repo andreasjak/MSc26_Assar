@@ -10,7 +10,6 @@ import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
 from functions.analyte import ANALYTES
 from functions.training import train_loop
-from networks.cnn_network import build_dataloader
 
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -20,35 +19,26 @@ class CNNNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1, dilation=1),
-            nn.BatchNorm1d(32),
+            nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-
-            nn.Conv1d(32, 64, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(16, 16, kernel_size=5, padding=2),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-
-            nn.Conv1d(64, 128, kernel_size=3, padding=4, dilation=4),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-
-            nn.Conv1d(128, 128, kernel_size=3, padding=4, dilation=8),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
             nn.ReLU()
         )
 
 
-        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
-        self.tabular = nn.Sequential(
-            nn.Linear(26, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU()
-        )
-
-        # Gemensam klassificerare – CNN-features (256) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(256 + 32, 64),
+            nn.Linear(300*16, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
@@ -56,34 +46,30 @@ class CNNNetwork(nn.Module):
 
     def forward(self, x):
         curve   = x[:, :300].unsqueeze(1)
-        tabular = x[:, 300:]
 
-        curve   = self.features(curve)
-        avg_pool = torch.mean(curve, dim=2)
-        max_pool = torch.max(curve, dim=2).values
-        curve_features   = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        tabular_features = self.tabular(tabular)                    # (n, 32)
+        curve_features   = torch.flatten(self.features(curve), 1)  # (n, 128)
 
-        combined = torch.cat([curve_features, tabular_features], dim=1)  # (n, 288)
-        return self.classifier(combined)
+        return self.classifier(curve_features)
 
 
 class Comment108Model:
     def __init__(self,
                  model_path='../models/comment_108.pth',
-                 scaler_path='../models/scaler.pkl'):
+                 scaler_path='../models/global_scaler_ln_300.pkl'):
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
         self.scaler = joblib.load(scaler_path)
-        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
         self.model.to(device)
 
     def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
         """Beräknar P(M-komponent) och skriver till df['comment_108']."""
-        X = self._build_X(df)
-        dataloader = DataLoader(TensorDataset(torch.tensor(X)), batch_size=512)
-        self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
+        X = df['value'].to_list()
+        X = self.scaler.transform(X)
+        X = torch.tensor(np.array(X, dtype=np.float32))
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        dataloader = DataLoader(TensorDataset(X), batch_size=512)
         self.model.eval()
+        
         all_probs = []
         with torch.no_grad():
             for batch in dataloader:
@@ -94,17 +80,6 @@ class Comment108Model:
 
         df['comment_108'] = np.concatenate(all_probs)
         return df
-    
-    def _build_X(self, df: pd.DataFrame) -> np.ndarray:
-        protein_cols = [a.col for a in ANALYTES[:8]]
-        X = np.concatenate([
-            np.array(df['value'].tolist(),      dtype=np.float32),  # (n, 300)
-            np.array(df['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
-            np.array(df['boundaries'].tolist(), dtype=np.float32),  # (n, 12)
-            np.array(df[protein_cols].values,   dtype=np.float32),  # (n, 8)
-        ], axis=1)
-        X[:, 300:] = self.scaler.transform(X[:, 300:])
-        return X
 
     def retrain(self, train_dl, val_dl, epochs=10000, patience=5,model_path=None):
         """Tränar om modellen och sparar bästa vikterna."""
@@ -120,7 +95,7 @@ class Comment108Model:
             )
         save_path=model_path or self.model_path
 
-        train_loop(
+        best_auc = train_loop(
             train_dl, val_dl, self.model, loss_fn, optimizer, scheduler,
             save_path=save_path,
             epochs=epochs,
@@ -129,6 +104,8 @@ class Comment108Model:
             autoencoder=False
         )
         self.model.load_state_dict(torch.load(save_path, weights_only=True))
+        return best_auc
+
 
     def retrain_with_k_fold(self, train_df: pd.DataFrame, k=10, epochs=100, patience=15):
         """
@@ -159,8 +136,7 @@ class Comment108Model:
             fold_val_df = train_df.iloc[val_idx]
             
             # Bygg dataloaders
-            fold_train_dl = build_dataloader(fold_train_df)
-            fold_val_dl = build_dataloader(fold_val_df)
+            fold_train_dl,fold_val_dl,_ = self.build_dataloaders(fold_train_df,fold_val_df,fold_val_df)
             
             
             # Definiera unikt filnamn för den bästa modellen i denna fold
@@ -230,6 +206,7 @@ class Comment108Model:
         print("="*50)
         
         return df_metrics
+    
 
     def evaluate(self, df,threshold=0.7):
         df = self.predict(df)
@@ -279,3 +256,33 @@ class Comment108Model:
 
         plt.show()
         return df
+    
+    def build_dataloaders(self,train_rows, val_rows, test_rows, batch_sz=512):
+
+        def build_X(rows):
+            return np.concatenate([
+                np.array(rows['value'].tolist(),      dtype=np.float32),  # (n, 300)
+            ], axis=1)
+
+        X_train = build_X(train_rows)
+        X_val   = build_X(val_rows)
+        X_test  = build_X(test_rows)
+
+        # Skala bara features efter index 300, fit bara på träning
+        scaler = StandardScaler()
+        X_train[:,:] = scaler.fit_transform(X_train[:, :])
+        X_val[:, :]   = scaler.transform(X_val[:, :])
+        X_test[:, :]  = scaler.transform(X_test[:, :])
+        joblib.dump(scaler, '../models/global_scaler_ln_300.pkl')
+
+        y_train = torch.tensor(np.array(train_rows['label'].values, dtype=np.int64))
+        y_val   = torch.tensor(np.array(val_rows['label'].values,   dtype=np.int64))
+        y_test  = torch.tensor(np.array(test_rows['label'].values,  dtype=np.int64))
+
+        X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
+
+        train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
+        val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
+        test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
+
+        return train_dl, val_dl, test_dl

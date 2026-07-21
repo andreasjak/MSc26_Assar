@@ -30,7 +30,7 @@ def choose_username():
 
 
 def show_annotation_gui():
-    con = duckdb.connect('application/application.db')
+    con = duckdb.connect('application.db')
     usernames = con.execute("SELECT username FROM users").df()['username'].tolist()
     username = choose_username()
     if username is None:

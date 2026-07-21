@@ -1,3 +1,4 @@
+import joblib
 from matplotlib import pyplot as plt
 from sklearn.metrics import auc, classification_report, confusion_matrix, roc_curve
 from sklearn.model_selection import StratifiedKFold
@@ -16,48 +17,57 @@ class OligoclonalNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1, dilation=1),
-            nn.BatchNorm1d(32),
+            nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(16, 16, kernel_size=5, padding=2),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Conv1d(64, 128, kernel_size=3, padding=4, dilation=4),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Conv1d(128, 128, kernel_size=3, padding=4, dilation=8),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
             nn.ReLU()
         )
+
+
         self.classifier = nn.Sequential(
-            nn.Linear(256, 64),
+            nn.Linear(300*16, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(64, 2)
         )
 
     def forward(self, x):
-        if x.dim() == 2:
-            x = x.unsqueeze(1)
-        x = self.features(x)
-        avg_pool = torch.mean(x, dim=2)
-        max_pool = torch.max(x, dim=2).values
-        x = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        return self.classifier(x)
+        curve   = x[:, :300].unsqueeze(1)
+
+        curve_features   = torch.flatten(self.features(curve), 1)  # (n, 128)
+
+        return self.classifier(curve_features)
 
 
 class OligoclonalModel:
-    def __init__(self, model_path='../models/oligoclonal_model.pth'):
+    def __init__(self, 
+                 model_path='../models/oligoclonal_model.pth',
+                 scaler_path='../models/global_scaler_ln_300.pkl'):
         self.model_path = model_path
         self.model = OligoclonalNetwork().to(device)
-        self.model.load_state_dict(torch.load(model_path, weights_only=True))
+        self.scaler = joblib.load(scaler_path)
+        self.model.to(device)
 
     def predict(self, df: pd.DataFrame) -> pd.DataFrame:
         """Beräknar P(oligoklonalt) och skriver till df['oligoclonal_probability']."""
-        X = torch.tensor(np.array(df['value'].tolist(), dtype=np.float32))
+        X = df['value'].to_list()
+        X = self.scaler.transform(X)
+        X = torch.tensor(np.array(X, dtype=np.float32))
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
         dataloader = DataLoader(TensorDataset(X), batch_size=512)
-
         self.model.eval()
+        
         all_probs = []
         with torch.no_grad():
             for batch in dataloader:
@@ -118,8 +128,9 @@ class OligoclonalModel:
         plt.show()
         return df
 
-    def retrain(self, train_dl, val_dl, epochs=10000, patience=5):
+    def retrain(self, train_dl, val_dl, epochs=10000, patience=5,model_path = None):
         """Tränar om modellen och sparar bästa vikterna."""
+        self.model = OligoclonalNetwork().to(device)
         pos_weight = torch.tensor([1.0, 6], dtype=torch.float32).to(device)
         loss_fn   = nn.CrossEntropyLoss(weight=pos_weight)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
@@ -131,15 +142,17 @@ class OligoclonalModel:
                 min_lr=1e-6
             )
 
-        train_loop(
+        path=model_path or self.model_path
+        best_auc = train_loop(
             train_dl, val_dl, self.model, loss_fn, optimizer, scheduler,
-            save_path=self.model_path,
+            save_path=path,
             epochs=epochs,
             patience=patience,
             device=device,
-            autoencoder=False
+            autoencoder=False,
         )
-        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        self.model.load_state_dict(torch.load(path, weights_only=True))
+        return best_auc
     
     def retrain_with_k_fold(self, train_df: pd.DataFrame, k=10, epochs=100, patience=15):
         """
@@ -170,8 +183,8 @@ class OligoclonalModel:
             fold_val_df = train_df.iloc[val_idx]
             
             # Bygg dataloaders
-            fold_train_dl = build_dataloader(fold_train_df)
-            fold_val_dl = build_dataloader(fold_val_df)
+            fold_train_dl = self.build_dataloader(fold_train_df)
+            fold_val_dl = self.build_dataloader(fold_val_df)
             
             
             # Definiera unikt filnamn för den bästa modellen i denna fold
@@ -242,14 +255,16 @@ class OligoclonalModel:
         
         return df_metrics
 
-def build_dataloader(rows, batch_sz=512):
+    def build_dataloader(self,rows, batch_sz=512):
+        X = self.scaler.transform(rows['value'].tolist())
+        X = np.array(X,dtype=np.float32)
+        
+        y = torch.tensor(rows['label'].values, dtype=torch.long)
+        ids = torch.tensor(rows['row_id'].to_numpy(), dtype=torch.long)
+        X = torch.tensor(X, dtype=torch.float32)
 
-    X = np.array(rows['value'].tolist(),dtype=np.float32)
-    
-    y = torch.tensor(rows['label'].values, dtype=torch.long)
-    ids = torch.tensor(rows['row_id'].to_numpy(), dtype=torch.long)
-    X = torch.tensor(X, dtype=torch.float32)
+        dataset = TensorDataset(X, y, ids)
 
-    dataset = TensorDataset(X, y, ids)
+        return DataLoader(dataset, batch_size=batch_sz, shuffle=True)
 
-    return DataLoader(dataset, batch_size=batch_sz, shuffle=True)
+

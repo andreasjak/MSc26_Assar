@@ -18,10 +18,10 @@ class CNNNetwork(nn.Module):
         super().__init__()
         # CNN-del – bara för kurvan (300 punkter)
         self.features = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=12, padding=6),
+            nn.Conv1d(in_channels=1, out_channels=32, kernel_size=2, padding=1),
             nn.ReLU(),
             nn.MaxPool1d(2),
-            nn.Conv1d(32, 64, kernel_size=6, padding=3),
+            nn.Conv1d(32, 64, kernel_size=2, padding=1),
             nn.ReLU(),
             nn.MaxPool1d(2),
             nn.Conv1d(64, 128, kernel_size=2, padding=1),
@@ -58,11 +58,12 @@ class CNNNetwork(nn.Module):
 
 class CNNModel:
     def __init__(self,
-                 model_path='../models/convolution_model_kernel.pth',
+                 model_path='../models/convolution_model_small_kernels.pth',
                  scaler_path='../models/scaler.pkl'):
         self.model_path = model_path
         self.model = CNNNetwork().to(device)
         self.scaler = joblib.load(scaler_path)
+        self.name = 'cnn_small_kernels'
         #self.model.load_state_dict(torch.load(model_path or self.model_path, weights_only=True))
 
     def predict(self, df: pd.DataFrame, model_path=None) -> pd.DataFrame:
@@ -84,6 +85,59 @@ class CNNModel:
     
     def reset_weights(self):
         self.model = CNNNetwork().to(device)
+
+    def predict_dl(self, val_dl) -> pd.DataFrame:
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        self.model.eval()
+        all_probs = []
+        df = pd.DataFrame()
+        with torch.no_grad():
+            for batch in val_dl:
+                inputs = batch[0].to(device)
+                logits = self.model(inputs)
+                probs = torch.softmax(logits, dim=1)[:, 1]
+                all_probs.append(probs.cpu().numpy())
+
+        df['probability'] = np.concatenate(all_probs)
+        df['prediction'] = (df['probability'] >=0.5).astype(int)
+        return df
+
+    def build_dataloaders(self,train_rows, val_rows, test_rows, batch_sz=512):
+        protein_cols = [a.col for a in ANALYTES[:8]]
+        train_rows = train_rows.dropna(subset=protein_cols)
+        val_rows = val_rows.dropna(subset=protein_cols)
+        test_rows = test_rows.dropna(subset=protein_cols)
+
+        def build_X(rows):
+            return np.concatenate([
+                np.array(rows['value'].tolist(),      dtype=np.float32),  # (n, 300)
+                np.array(rows['fractions'].tolist(),  dtype=np.float32),  # (n, 6)
+                np.array(rows['boundaries'].tolist(), dtype=np.float32),  # (n, 12)
+                np.array(rows[protein_cols].values,   dtype=np.float32),  # (n, 8)
+            ], axis=1)
+
+        X_train = build_X(train_rows)
+        X_val   = build_X(val_rows)
+        X_test  = build_X(test_rows)
+
+        # Skala bara features efter index 300, fit bara på träning
+        scaler = StandardScaler()
+        X_train[:, :] = scaler.fit_transform(X_train[:, :])
+        X_val[:, :]   = scaler.transform(X_val[:, :])
+        X_test[:, :]  = scaler.transform(X_test[:, :])
+        joblib.dump(scaler, '../models/scaler.pkl')
+
+        y_train = torch.tensor(np.array(train_rows['label'].values, dtype=np.int64))
+        y_val   = torch.tensor(np.array(val_rows['label'].values,   dtype=np.int64))
+        y_test  = torch.tensor(np.array(test_rows['label'].values,  dtype=np.int64))
+
+        X_train, X_val, X_test = map(torch.tensor, [X_train, X_val, X_test])
+
+        train_dl = DataLoader(TensorDataset(X_train, y_train, torch.tensor(train_rows['row_id'].to_numpy())), batch_size=batch_sz, shuffle=True)
+        val_dl   = DataLoader(TensorDataset(X_val,   y_val,   torch.tensor(val_rows['row_id'].to_numpy())),   batch_size=batch_sz)
+        test_dl  = DataLoader(TensorDataset(X_test,  y_test,  torch.tensor(test_rows['row_id'].to_numpy())),  batch_size=batch_sz)
+
+        return train_dl, val_dl, test_dl
 
     
     def retrain_with_k_fold(self, train_df: pd.DataFrame, k=10, epochs=100, patience=15):
@@ -178,7 +232,7 @@ class CNNModel:
         df_metrics = pd.DataFrame(kfold_history)
         
         # Spara till CSV-fil
-        csv_save_path = '../models/cnn_different_kernel_kfold_metrics.csv'
+        csv_save_path = '../models/cnn_small_kernels_kfold_metrics.csv'
         df_metrics.to_csv(csv_save_path, index=False)
         
         print("\n" + "="*50)

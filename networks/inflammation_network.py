@@ -46,37 +46,47 @@ class InflammationNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, padding=1, dilation=1),
-            nn.BatchNorm1d(32),
+            nn.Conv1d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, padding=2, dilation=2),
-            nn.BatchNorm1d(64),
+            nn.Conv1d(16, 16, kernel_size=5, padding=2),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
-            nn.Conv1d(64, 128, kernel_size=3, padding=4, dilation=4),
-            nn.BatchNorm1d(128),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
             nn.ReLU(),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+            nn.Conv1d(16,16,kernel_size=7,padding=3),
+            nn.BatchNorm1d(16),
+            nn.ReLU()
         )
-        # CRP, haptoglobin, albumin, alpha-1, alpha-2 – mest relevanta
+
+        # Tabelldata – fractions(6) + boundaries(12) + proteiner(8) = 26
         self.tabular = nn.Sequential(
-            nn.Linear(26, 32),
+            nn.Linear(26, 64),
             nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU()
         )
+
+        # Gemensam klassificerare – CNN-features (128) + tabular (32)
         self.classifier = nn.Sequential(
-            nn.Linear(256 + 32, 64),
+            nn.Linear(300*16 + 32, 64),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(64, 8)  # CORAL-trösklar
+            nn.Linear(64, 8)
         )
 
     def forward(self, x):
         curve   = x[:, :300].unsqueeze(1)
         tabular = x[:, 300:]
-        curve   = self.features(curve)
-        avg_pool = torch.mean(curve, dim=2)
-        max_pool = torch.max(curve, dim=2).values
-        curve_features   = torch.cat([avg_pool, max_pool], dim=1)  # (n, 256)
-        tabular_features = self.tabular(tabular)                    # (n, 32)
-        combined = torch.cat([curve_features, tabular_features], dim=1)
+
+        curve_features   = torch.flatten(self.features(curve), 1)  # (n, 128)
+        tabular_features = self.tabular(tabular)                              # (n, 32)
+
+        combined = torch.cat([curve_features, tabular_features], dim=1)      # (n, 160)
         return self.classifier(combined)
 
 
@@ -86,7 +96,7 @@ class InflammationModel:
     def __init__(self, model_path='../models/inflammation_model.pth'):
         self.model_path = model_path
         self.model = InflammationNetwork().to(device)
-        self.model.load_state_dict(torch.load(model_path, weights_only=True))
+        self.scaler = joblib.load('../models/global_scaler.pkl')
 
     def predict(self, df: pd.DataFrame) -> pd.DataFrame:
         """Predikterar inflammationsgrad och skriver till df['inflammation']."""
@@ -98,8 +108,8 @@ class InflammationModel:
             np.array(df[protein_cols].values,   dtype=np.float32),  # (n, 8)
         ], axis=1)
         
-        scaler = joblib.load('../models/scaler.pkl')
-        X[:, 300:] = scaler.transform(X[:, 300:])
+        
+        X= self.scaler.transform(X)
         
         dataloader = DataLoader(TensorDataset(torch.tensor(X)), batch_size=512)  # Fix 2
         self.model.eval()
@@ -111,7 +121,7 @@ class InflammationModel:
                 probs  = coral_predict_soft(logits)
                 all_probs.append(probs.cpu().numpy())
         
-        df['inflammation'] = np.concatenate(all_probs).astype(int)
+        df['inflammation'] = np.concatenate(all_probs)
         return df
 
     def retrain(self, train_dl, val_dl, epochs=50, patience=10):
@@ -125,7 +135,7 @@ class InflammationModel:
             patience=4,
             min_lr=1e-6
         )
-        train_loop_coral(
+        mae = train_loop_coral(
             train_dl, val_dl, self.model, loss_fn, optimizer, scheduler,
             save_path=self.model_path,
             epochs=epochs,
@@ -133,8 +143,10 @@ class InflammationModel:
             device=device,
         )
         self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
+        return mae
 
     def evaluate_inflammation(self, test_dl):
+        self.model.load_state_dict(torch.load(self.model_path, weights_only=True))
         self.model.eval()
         all_preds, all_true = [], []
         
@@ -222,12 +234,10 @@ def build_dataloaders(train_rows, val_rows, test_rows, batch_sz=512):
     X_val   = build_X(val_rows)
     X_test  = build_X(test_rows)
 
-    # Skala bara features efter index 300, fit bara på träning
     scaler = StandardScaler()
-    X_train[:, 300:] = scaler.fit_transform(X_train[:, 300:])
-    X_val[:, 300:]   = scaler.transform(X_val[:, 300:])
-    X_test[:, 300:]  = scaler.transform(X_test[:, 300:])
-    joblib.dump(scaler, '../models/scaler.pkl')
+    X_train = scaler.fit_transform(X_train)
+    X_val   = scaler.transform(X_val)
+    X_test = scaler.transform(X_test)
 
     y_train = torch.tensor(np.array(train_rows['label'].tolist(), dtype=np.float32))  # (n, 8)
     y_val   = torch.tensor(np.array(val_rows['label'].tolist(),   dtype=np.float32))  # (n, 8)

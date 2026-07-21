@@ -128,11 +128,13 @@ def train_loop(
                 break
 
     print("Klar!")
+    return best_auc
 
 def train_loop_coral(train_dl, val_dl, model, loss_fn, optimizer, scheduler,
                      save_path, epochs=1000, patience=5, device='cpu'):
     best_val_loss = float('inf')
     no_improve = 0
+    best_mae = 100
 
     for t in range(epochs):
         model.train()
@@ -153,7 +155,7 @@ def train_loop_coral(train_dl, val_dl, model, loss_fn, optimizer, scheduler,
                 X, y = X.to(device), y.to(device).float()
                 logits = model(X)
                 val_loss += loss_fn(logits, y).item()
-                pred_severity = torch.sigmoid(logits).sum(dim=1).round()
+                pred_severity = torch.sigmoid(logits).sum(dim=1)
                 true_severity = y.sum(dim=1)
                 mae += torch.abs(pred_severity - true_severity).mean().item()
         val_loss /= len(val_dl)
@@ -162,11 +164,15 @@ def train_loop_coral(train_dl, val_dl, model, loss_fn, optimizer, scheduler,
         scheduler.step(val_loss)
         print(f"Epoch {t:>3} | train: {train_loss:.4f} | val: {val_loss:.4f} | MAE: {mae:.3f} | lr: {optimizer.param_groups[0]['lr']:.6f}")
 
+        if mae < best_mae:
+            best_mae = mae
+            torch.save(model.state_dict(), save_path)
+            print(f"  -> ny bästa modell sparad")
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             no_improve = 0
-            torch.save(model.state_dict(), save_path)
-            print(f"  -> ny bästa modell sparad")
+            
         else:
             no_improve += 1
             if no_improve >= patience:
@@ -174,3 +180,4 @@ def train_loop_coral(train_dl, val_dl, model, loss_fn, optimizer, scheduler,
                 break
 
     print("Klar!")
+    return best_mae
