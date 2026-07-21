@@ -285,3 +285,48 @@ def generate_latex_table(df):
 \label{""" + "label" + r"""}
 \end{table}
 """
+
+def plot_3_by_3_confusion_matrix(df):
+    cm = confusion_matrix(df['label'], df['final_prediction'])
+
+    labels = [
+        'No M-component',
+        'M-component',
+        'Oligoclonal/heterogeneity'
+    ]
+
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm,
+        display_labels=labels
+    )
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    disp.plot(
+        ax=ax,
+        
+        colorbar=False,
+        cmap='Blues',
+        values_format='d'
+    )
+
+    for text in ax.texts:
+        text.set_fontsize(16)
+
+    ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=12)
+    ax.set_yticklabels(labels, fontsize=12)
+
+    ax.set_xlabel('Predicted class', fontsize=15, labelpad=15)
+    ax.set_ylabel('True class', fontsize=15, labelpad=15)
+
+    ax.set_title('Confusion Matrix', fontsize=17, pad=20)
+
+    fig.tight_layout()
+
+    # efter tight_layout:
+    fig.subplots_adjust(
+        left=0.18,
+        bottom=0.22
+    )
+
+    plt.show()
