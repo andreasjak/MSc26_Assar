@@ -14,14 +14,13 @@ def choose_username():
     instructions = """Användning: använd knapparna 1-4 eller musen för att annotera. Man kan använda piltangenterna för att hoppa fram och tillbaka. 
     Prealbumin-regionen är inte med för att ge mer plats åt beta-gamma-regionen. Allting sparas kontinuerligt, så man kan stänga ner rutan när man känner sig klar. 
     
-    Instruktioner: klassificera patientfallen med avseende på immunglobulinmönster utifrån kurva och uppmätta proteinhalter, det finns fyra klasser att välja på. Detta är förstagångsfall utan känd M-komponent eller specifik anamnestisk information.
+    Instruktioner: Försök klassificera i någon av de fyra grupperna utifrån presenterad information. Detta är förstagångsfall utan känd M-komponent eller specifik anamnestisk information.
     Du kommer få klassificera 200 fall, varav 100 där modellen antingen visar stor osäkerhet, eller inte gjort samma klassificering som läkaren. Utöver de 100 "svåra" fallen kommer du även få klassificera 100 "normalsvåra" fall.
     Ordningen de 200 fallen presenteras i är slumpartad.
-    1. Normalt, ingen misstanke om M-kompnent.
-    2. Misstänkt M-komponent, bör inmmunfixeras.
-    3. Oligoklonalt mönster, ingen immunfixation.
-    4. Lätta avvikande immunglobulinfördelning. Avvikande mönster utan flera tydliga band som för oligoklonalitet, men som inte motiverar immunfixation vid detta tillfälle. Svaras typiskt ut med:
-    ”Lätt avvikande immunglobulinfördelning. M-komponent < 1 g/L? Specifik immunisering?
+    1. Ingen synlig M-komponent i serum
+    2. Synlig misstänkt M-komponent i serum
+    3. Oligoklonal immunglobulinfördelning
+    4. Lätt avvikande immunglobulinfördelning. Specifik immunisering? M-komponent <1 g/L?
     """
     print(f"{instructions}\n\n")
     username = input("Ange användarnamn:")
@@ -63,18 +62,18 @@ def show_annotation_gui():
     ax_status = fig.add_axes([0.05, 0.12, 0.90, 0.05])
     ax_status.axis('off')
 
-    ax_prev    = fig.add_axes([0.05, 0.02, 0.07, 0.07])
-    ax_neg     = fig.add_axes([0.14, 0.02, 0.16, 0.07])
-    ax_pos     = fig.add_axes([0.32, 0.02, 0.16, 0.07])
-    ax_oligo   = fig.add_axes([0.50, 0.02, 0.16, 0.07])
-    ax_dev     = fig.add_axes([0.68, 0.02, 0.16, 0.07])
-    ax_next    = fig.add_axes([0.86, 0.02, 0.07, 0.07])
+    ax_prev    = fig.add_axes([0.05, 0.02, 0.07, 0.1])
+    ax_neg     = fig.add_axes([0.14, 0.02, 0.16, 0.1])
+    ax_pos     = fig.add_axes([0.32, 0.02, 0.16, 0.1])
+    ax_oligo   = fig.add_axes([0.50, 0.02, 0.16, 0.1])
+    ax_dev     = fig.add_axes([0.68, 0.02, 0.16, 0.1])
+    ax_next    = fig.add_axes([0.86, 0.02, 0.07, 0.1])
 
     btn_prev   = widgets.Button(ax_prev, '←',                    color='#e2e3e5')
-    btn_neg    = widgets.Button(ax_neg,  '1: Ingen M-komp',      color='#d4edda')
-    btn_pos    = widgets.Button(ax_pos,  '2: Misstänkt M-komp',  color='#f8d7da')
-    btn_oligo  = widgets.Button(ax_oligo,'3: Oligoklonalt',      color='#fff3cd')
-    btn_dev    = widgets.Button(ax_dev,  '4: Lätt avv. förd.',   color="#9ebbf4")
+    btn_neg    = widgets.Button(ax_neg,  '1: Ingen synlig\n M-komponent i serum',      color='#d4edda')
+    btn_pos    = widgets.Button(ax_pos,  '2: Synlig misstänkt\nM-komponent i serum',  color='#f8d7da')
+    btn_oligo  = widgets.Button(ax_oligo,'3: Oligoklonal\n immunglobulinfördelning',      color='#fff3cd')
+    btn_dev    = widgets.Button(ax_dev,  '4: Lätt avvikande\n immunglobulinfördelning.\n Specifik immunisering?\n M-komponent <1 g/L?',   color="#9ebbf4")
     btn_next   = widgets.Button(ax_next, '→',                    color='#e2e3e5')
 
     status_text = ax_status.text(0.5, 0.5, '', ha='center', va='center',
