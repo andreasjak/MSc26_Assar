@@ -67,7 +67,7 @@ def get_inflammation_model() -> InflammationModel:
 
 # ── predict ──────────────────────────────────────────────────────────────────
 
-def predict(df: pd.DataFrame,threshold=0.2, proportion = 70) -> pd.DataFrame:
+def predict(df: pd.DataFrame,threshold=0.1, proportion = 70) -> pd.DataFrame:
 
     if len(df) == 0:
         raise Exception("Raden saknar nödvändig information.")

@@ -6,6 +6,8 @@ from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from sklearn.metrics import ConfusionMatrixDisplay
 
+from functions.analyte import ANALYTES, get_ref
+
 
 def evaluate_all_classes(df: pd.DataFrame) -> pd.DataFrame:
     labels = [0, 1, 2, 4]
@@ -127,6 +129,108 @@ def evaluate(df: pd.DataFrame,threshold=0.5) -> pd.DataFrame:
 
 
     return df
+
+def show_case(row):
+    idx = 0
+
+    fig = plt.figure(figsize=(13, 8))
+    gs = fig.add_gridspec(
+        2, 2,
+        width_ratios=[3, 1],
+        height_ratios=[3, 1]
+    )
+
+    ax_curve = fig.add_subplot(gs[0, 0])
+    ax_table = fig.add_subplot(gs[0, 1])
+    ax_text = fig.add_subplot(gs[1, :])
+
+    fig.suptitle(
+        f"ID {row.loc[idx,'row_id']}    "
+        f"Label: {row.loc[idx,'label']}    "
+        f"CNN={100*row.loc[idx,'cnn_probability']:.1f}%    "
+        f"Oligoklonal={100*row.loc[idx,'oligoclonal_probability']:.1f}%    "
+        f"Kommentar108={100*row.loc[idx,'comment_108']:.1f}%",
+        fontsize=12
+    )
+
+    # Kurva
+    ax_curve.plot(row.loc[idx, "value"], lw=2)
+    ax_curve.set_xlabel("Position")
+    ax_curve.set_ylabel("Signal")
+    ax_curve.set_title("Capillary electrophoresis")
+
+    # ---------- Proteiner ----------
+    gender = row["gender"].iloc[0]
+
+    core_analytes = ANALYTES[:8]
+    extra_analytes = [
+        a for a in ANALYTES[8:11]
+        if pd.notna(row[a.col].iloc[0])
+    ]
+    urine_analytes = [
+        a for a in ANALYTES[11:]
+        if pd.notna(row[a.col].iloc[0])
+    ]
+
+    analytes = core_analytes + extra_analytes + urine_analytes
+
+    table_data = []
+    colors = []
+
+    for analyte in analytes:
+
+        value = row[analyte.col].iloc[0]
+        low, high = get_ref(analyte, gender)
+
+        outside = not (low <= value <= high)
+
+        table_data.append([
+            f"{value:.2f}",
+            f"{low}-{high}"
+        ])
+
+        colors.append(
+            ["#ffdddd", "#ffdddd"] if outside else ["white", "white"]
+        )
+
+    ax_table.axis("off")
+
+    table = ax_table.table(
+        cellText=table_data,
+        rowLabels=[a.name for a in analytes],
+        colLabels=["Value", "Reference"],
+        cellLoc="center",
+        bbox=[0,0,1,1]
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+
+    for (r,c), cell in table.get_celld().items():
+
+        if r == 0:
+            cell.set_facecolor("#dddddd")
+
+        elif r > 0 and c >= 0:
+            cell.set_facecolor(colors[r-1][c])
+
+    # ---------- Läkartolkning ----------
+    ax_text.axis("off")
+
+    interpretation = str(row.loc[idx, "interpretation"])
+
+    ax_text.text(
+        0,
+        1,
+        "Physician interpretation\n\n" + interpretation,
+        va="top",
+        fontsize=11,
+        wrap=True
+    )
+
+    plt.tight_layout()
+
+    return fig
 
 def generate_latex_table(df):
     tn = df['tn'].mean()
