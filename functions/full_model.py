@@ -84,7 +84,7 @@ def predict(df: pd.DataFrame,threshold=0.1, proportion = 70) -> pd.DataFrame:
         (df['cnn_probability'] > threshold) | (df['proportion_gamma_region'] > proportion)
     ).astype(int)
 
-    #df = predict_using_free_light_chains(df)
+    df = predict_using_free_light_chains(df)
     df['final_prediction'] = df['prediction'].copy()
     if 'free_light_chain_flag' in df.columns:
         df.loc[df['free_light_chain_flag'] == 1, 'final_prediction'] = 1

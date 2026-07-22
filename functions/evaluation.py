@@ -222,7 +222,7 @@ def show_case(row):
     ax_text.text(
         0,
         1,
-        "Physician interpretation\n\n" + interpretation,
+        "Physician interpretation:\n" + interpretation,
         va="top",
         fontsize=11,
         wrap=True
